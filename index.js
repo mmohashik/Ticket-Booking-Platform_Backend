@@ -3,10 +3,12 @@ const app  = express();
 const mongoose = require('mongoose');
 const Event = require('./models/event.model');
 const eventRoutes = require('./routes/event.route');
+const cors = require('cors');
 
 //middleware
 app.use(express.json());
 app.use(express.urlencoded({extended: false}));
+app.use(cors());
 
 //routes
 app.use('/event', eventRoutes);
