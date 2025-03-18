@@ -13,6 +13,7 @@ app.use('/event', eventRoutes);
 
 //setup database connection
 mongoose.connect('mongodb+srv://admin:bigidea123@bigideadb.xeleu.mongodb.net/BigideaDB?retryWrites=true&w=majority&appName=BigideaDB')
+
 .then(() => {
     console.log('Connected to database');
     app.listen(3000, () => {
