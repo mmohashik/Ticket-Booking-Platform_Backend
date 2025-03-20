@@ -9,6 +9,7 @@ const cors = require('cors');
 app.use(express.json());
 app.use(express.urlencoded({extended: false}));
 app.use(cors());
+app.use('/images', express.static('public'));
 
 //routes
 app.use('/event', eventRoutes);
