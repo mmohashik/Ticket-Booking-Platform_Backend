@@ -4,12 +4,13 @@ const mongoose = require('mongoose');
 const Event = require('./models/event.model');
 const eventRoutes = require('./routes/event.route');
 const cors = require('cors');
+const path = require('path');
 
 //middleware
 app.use(express.json());
 app.use(express.urlencoded({extended: false}));
 app.use(cors());
-app.use('/images', express.static('public'));
+app.use('/images', express.static(path.join(__dirname, 'public/images')));
 
 //routes
 app.use('/event', eventRoutes);
