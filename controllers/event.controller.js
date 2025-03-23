@@ -2,11 +2,12 @@ const Event = require("../models/event.model");
 
 const postEvent = async (req, res) => {
   try {
-    const { eventName, eventDate, eventTime, venue, totalTickets, ticketTypes } = req.body;
+    const { eventName, eventDescription, eventDate, eventTime, venue, totalTickets, ticketTypes } = req.body;
     const imagePath = req.file ? `/images/${req.file.filename}` : null;
 
     const newEvent = new Event({
       eventName,
+      eventDescription,
       eventDate,
       eventTime,
       venue,

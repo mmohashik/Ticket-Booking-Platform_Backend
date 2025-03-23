@@ -7,6 +7,7 @@ const TicketTypeSchema = new mongoose.Schema({
 
 const EventSchema = new mongoose.Schema({
   eventName: { type: String, required: true },
+  eventDescription: { type: String, required: false },
   eventDate: { type: Date, required: true },
   eventTime: { type: String, required: true },
   venue: { type: String, required: true },
