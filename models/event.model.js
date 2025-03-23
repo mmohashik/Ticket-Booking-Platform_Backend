@@ -10,6 +10,7 @@ const EventSchema = new mongoose.Schema({
   eventDate: { type: Date, required: true },
   eventTime: { type: String, required: true },
   venue: { type: String, required: true },
+  totalTickets: { type: Number, required: true },
   ticketTypes: [TicketTypeSchema],
   image: { type: String, required: true },
   status: { type: String, enum: ["Upcoming", "Ongoing", "Completed"], default: "Upcoming" },

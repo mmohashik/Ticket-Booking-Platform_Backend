@@ -2,7 +2,7 @@ const Event = require("../models/event.model");
 
 const postEvent = async (req, res) => {
   try {
-    const { eventName, eventDate, eventTime, venue, ticketTypes } = req.body;
+    const { eventName, eventDate, eventTime, venue, totalTickets, ticketTypes } = req.body;
     const imagePath = req.file ? `/images/${req.file.filename}` : null;
 
     const newEvent = new Event({
@@ -10,6 +10,7 @@ const postEvent = async (req, res) => {
       eventDate,
       eventTime,
       venue,
+      totalTickets,
       ticketTypes: JSON.parse(ticketTypes), // Parse the stringified array
       image: imagePath,
     });
