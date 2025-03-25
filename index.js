@@ -17,13 +17,16 @@ app.use(helmet()); // Security headers
 app.use(morgan('dev')); // Request logging
 app.use(express.json({ limit: '10mb' })); // Increased limit for image uploads
 app.use(express.urlencoded({ extended: false }));
-app.use(cors({
-    origin: 'http://localhost:3001', // Your React app's URL
-    methods: ['GET', 'POST', 'DELETE']
-  }));
+app.use(cors());
 
 // Static files
-app.use('/images', express.static(path.join(__dirname, 'public/images')));
+app.use('/images', express.static(path.join(__dirname, 'public/images'),
+{
+  setHeaders: (res) => {
+    res.set('Access-Control-Allow-Origin', 'http://localhost:5173');
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  }
+}));
 
 // Routes - Updated to /api/events for better REST convention
 app.use('/api/events', eventRoutes);
