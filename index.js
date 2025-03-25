@@ -1,35 +1,66 @@
+require('dotenv').config();
 const express = require('express');
-const app  = express();
+const app = express();
 const mongoose = require('mongoose');
-const Event = require('./models/event.model');
 const eventRoutes = require('./routes/event.route');
 const cors = require('cors');
 const path = require('path');
+const helmet = require('helmet');
+const morgan = require('morgan');
 
-//middleware
-app.use(express.json());
-app.use(express.urlencoded({extended: false}));
-app.use(cors());
+// Environment variables
+const PORT = process.env.PORT || 3000;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://admin:bigidea123@bigideadb.xeleu.mongodb.net/BigideaDB?retryWrites=true&w=majority&appName=BigideaDB';
+
+// Middleware
+app.use(helmet()); // Security headers
+app.use(morgan('dev')); // Request logging
+app.use(express.json({ limit: '10mb' })); // Increased limit for image uploads
+app.use(express.urlencoded({ extended: false }));
+app.use(cors({
+    origin: 'http://localhost:3001', // Your React app's URL
+    methods: ['GET', 'POST', 'DELETE']
+  }));
+
+// Static files
 app.use('/images', express.static(path.join(__dirname, 'public/images')));
 
-//routes
-app.use('/event', eventRoutes);
+// Routes - Updated to /api/events for better REST convention
+app.use('/api/events', eventRoutes);
 
-//setup database connection
-mongoose.connect('mongodb+srv://admin:bigidea123@bigideadb.xeleu.mongodb.net/BigideaDB?retryWrites=true&w=majority&appName=BigideaDB')
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'healthy' });
+});
 
-.then(() => {
-    console.log('Connected to database');
-    app.listen(3000, () => {
-        console.log('Server is running on port 3000')
-    });
+// Database connection with improved options
+mongoose.connect(MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 5000
 })
-.catch(() => {
-    console.log('Connection failed');
+.then(() => {
+  console.log('Successfully connected to MongoDB');
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Events API: http://localhost:${PORT}/api/events`);
+  });
+})
+.catch((err) => {
+  console.error('Database connection error:', err.message);
+  process.exit(1);
 });
 
-//initial route
-app.get('/', (req, res) => {
-    res.send('Hello World');
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ 
+    error: 'Internal Server Error',
+    message: err.message 
+  });
 });
 
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({ error: 'Endpoint not found' });
+});
