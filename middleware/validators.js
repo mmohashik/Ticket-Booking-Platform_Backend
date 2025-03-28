@@ -1,0 +1,12 @@
+const { check } = require('express-validator');
+
+exports.adminCreateValidation = [
+  check('name', 'Name is required').not().isEmpty(),
+  check('email', 'Please include a valid email').isEmail(),
+  check('password', 'Password must be at least 6 characters').isLength({ min: 6 })
+];
+
+exports.adminUpdateValidation = [
+  check('name', 'Name is required').not().isEmpty(),
+  check('email', 'Please include a valid email').isEmail()
+];
