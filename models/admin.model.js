@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 const bcrypt = require('bcryptjs');
 
 const adminSchema = new mongoose.Schema({
@@ -20,10 +20,10 @@ const adminSchema = new mongoose.Schema({
     minlength: 6,
     select: false
   },
-  role: {
+  mobile: {
     type: String,
-    enum: ['admin', 'superadmin'],
-    default: 'admin'
+    required: true,
+    trim: true
   },
   createdAt: {
     type: Date,
@@ -33,22 +33,22 @@ const adminSchema = new mongoose.Schema({
 
 // Hash password before saving
 adminSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
+    if (!this.isModified('password')) return next();
+    
+    try {
+      const salt = await bcrypt.genSalt(10);
+      this.password = await bcrypt.hash(this.password, salt);
+      next();
+    } catch (err) {
+      next(err);
+    }
+  });
   
-  try {
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Method to compare passwords
-adminSchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
-};
-
-const Admin = mongoose.model('Admin', adminSchema);
+  // Method to compare passwords
+  adminSchema.methods.comparePassword = async function(candidatePassword) {
+    return await bcrypt.compare(candidatePassword, this.password);
+  };
+  
+  const Admin = mongoose.model('Admin', adminSchema);
 
 module.exports = Admin;

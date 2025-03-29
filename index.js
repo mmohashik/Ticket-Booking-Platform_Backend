@@ -3,6 +3,7 @@ const express = require('express');
 const app = express();
 const mongoose = require('mongoose');
 const eventRoutes = require('./routes/event.route');
+const adminRoutes = require('./routes/admin.route'); // Added admin routes
 const cors = require('cors');
 const path = require('path');
 const helmet = require('helmet');
@@ -24,7 +25,7 @@ if (missingEnvVars.length > 0) {
 
 // Environment variables with better defaults
 const PORT = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/admin-portal'; // Changed from localhost to 127.0.0.1
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/admin-portal';
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
 // Enhanced middleware configuration
@@ -84,6 +85,7 @@ app.use('/images', express.static(imagesDir, {
 
 // API routes with versioning
 app.use('/api/events', eventRoutes);
+app.use('/api/admins', adminRoutes); // Added admin routes
 
 // Enhanced health check endpoint
 app.get('/api/health', async (req, res) => {
@@ -110,8 +112,8 @@ const connectWithRetry = (retries = 5, delay = 5000) => {
     useNewUrlParser: true,
     useUnifiedTopology: true,
     serverSelectionTimeoutMS: 5000,
-    socketTimeoutMS: 45000, // Added socket timeout
-    connectTimeoutMS: 30000, // Added connection timeout
+    socketTimeoutMS: 45000,
+    connectTimeoutMS: 30000,
     retryWrites: true,
     w: 'majority'
   })
@@ -123,7 +125,7 @@ const connectWithRetry = (retries = 5, delay = 5000) => {
   })
   .catch(err => {
     console.error('Failed to connect to MongoDB:', err.message);
-    console.error('Connection URI used:', MONGODB_URI); // Log the connection URI
+    console.error('Connection URI used:', MONGODB_URI);
     
     if (retries > 0) {
       console.log(`Retrying connection in ${delay/1000} seconds...`);
@@ -163,7 +165,7 @@ app.use('*', (req, res) => {
 });
 
 // Server startup with enhanced logging
-const server = app.listen(PORT, '0.0.0.0', () => { // Listen on all network interfaces
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode`);
   console.log(`Listening on port ${PORT}`);
   console.log(`API Base URL: http://localhost:${PORT}/api`);

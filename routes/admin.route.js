@@ -1,30 +1,31 @@
 const express = require('express');
 const router = express.Router();
+//const adminController = require('../controllers/admin.controller');
 const { 
-  getAllAdmins,
-  createAdmin,
-  updateAdmin,
-  deleteAdmin
-} = require('../controllers/admin.controller');
-const { check } = require('express-validator');
+    createAdmin, 
+    getAllAdmins, 
+    getAdmin,
+    updateAdmin,
+    deleteAdmin,
+    changePassword 
+  } = require('../controllers/admin.controller');
 
-// GET - Get all admins
+// Create Admin
+router.post('/', createAdmin);
+
+// Get All Admins
 router.get('/', getAllAdmins);
 
-// POST - Create new admin
-router.post('/', [
-  check('name', 'Name is required').not().isEmpty(),
-  check('email', 'Please include a valid email').isEmail(),
-  check('password', 'Password must be at least 6 characters').isLength({ min: 6 })
-], createAdmin);
+// Get Single Admin
+router.get('/:id', getAdmin);
 
-// PATCH - Update admin by ID
-router.patch('/:id', [
-  check('name', 'Name is required').not().isEmpty(),
-  check('email', 'Please include a valid email').isEmail()
-], updateAdmin);
+// Update Admin
+router.patch('/:id', updateAdmin);
 
-// DELETE - Delete admin by ID
+// Delete Admin
 router.delete('/:id', deleteAdmin);
+
+// Change Password
+router.patch('/:id/password', changePassword);
 
 module.exports = router;
