@@ -35,6 +35,96 @@ const adminController = {
     }
   },
 
+  // Admin login (session-based)
+  loginAdmin: async (req, res) => {
+    try {
+      const { email, password } = req.body;
+
+      // Find admin by email
+      const admin = await Admin.findOne({ email }).select('+password');
+      if (!admin) {
+        return res.status(401).json({
+          status: 'error',
+          message: 'Invalid credentials'
+        });
+      }
+
+      // Compare passwords
+      const isMatch = await admin.comparePassword(password);
+      if (!isMatch) {
+        return res.status(401).json({
+          status: 'error',
+          message: 'Invalid credentials'
+        });
+      }
+
+      // Create session
+      req.session.adminId = admin._id;
+      req.session.save();
+
+      // Return admin data without password
+      const adminData = admin.toObject();
+      delete adminData.password;
+
+      res.json({
+        status: 'success',
+        data: { admin: adminData }
+      });
+    } catch (err) {
+      res.status(500).json({
+        status: 'error',
+        message: 'Server error'
+      });
+    }
+  },
+
+  // Get current admin (session-based)
+  getCurrentAdmin: async (req, res) => {
+    try {
+      if (!req.session.adminId) {
+        return res.status(401).json({
+          status: 'error',
+          message: 'Not authenticated'
+        });
+      }
+
+      const admin = await Admin.findById(req.session.adminId).select('-password');
+      if (!admin) {
+        return res.status(404).json({
+          status: 'error',
+          message: 'Admin not found'
+        });
+      }
+
+      res.json({
+        status: 'success',
+        data: { admin }
+      });
+    } catch (err) {
+      res.status(500).json({
+        status: 'error',
+        message: 'Server error'
+      });
+    }
+  },
+
+  // Admin logout (session-based)
+  logoutAdmin: (req, res) => {
+    req.session.destroy(err => {
+      if (err) {
+        return res.status(500).json({
+          status: 'error',
+          message: 'Logout failed'
+        });
+      }
+      res.clearCookie('connect.sid'); // Clear session cookie
+      res.json({
+        status: 'success',
+        message: 'Logged out successfully'
+      });
+    });
+  },
+
   // Get all admins
   getAllAdmins: async (req, res) => {
     try {
@@ -186,6 +276,5 @@ const adminController = {
     }
   }
 };
-
 
 module.exports = adminController;

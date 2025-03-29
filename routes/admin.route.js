@@ -7,8 +7,11 @@ const {
     getAdmin,
     updateAdmin,
     deleteAdmin,
-    changePassword 
+    changePassword, 
+    loginAdmin,
+    getCurrentAdmin
   } = require('../controllers/admin.controller');
+const authMiddleware = require('../middleware/authMiddleware');
 
 // Create Admin
 router.post('/', createAdmin);
@@ -27,5 +30,8 @@ router.delete('/:id', deleteAdmin);
 
 // Change Password
 router.patch('/:id/password', changePassword);
+
+router.post('/login', loginAdmin);
+router.get('/me', authMiddleware, getCurrentAdmin);
 
 module.exports = router;
