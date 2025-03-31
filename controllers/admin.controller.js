@@ -41,36 +41,56 @@ const adminController = {
   loginAdmin: async (req, res) => {
     try {
       const { email, password } = req.body;
-      console.log("Login attempt for:", email);
-      console.log("Raw password received:", password); // Temporary for debugging
-
-      const admin = await Admin.findOne({ email }).select("+password");
+      
+      // Validate input
+      if (!email || !password) {
+        return res.status(400).json({ 
+          status: 'error',
+          message: 'Email and password are required' 
+        });
+      }
+  
+      // Find admin with password
+      const admin = await Admin.findOne({ email }).select('+password');
       if (!admin) {
-        console.log("ERROR: Admin not found");
-        return res
-          .status(401)
-          .json({ status: "error", message: "Invalid credentials" });
+        return res.status(401).json({
+          status: 'error',
+          message: 'Invalid credentials'
+        });
       }
-
-      console.log("Stored hash:", admin.password);
-      console.log("Comparing with input:", password);
-
-      const isMatch = await bcrypt.compare(password, admin.password);
-      console.log("Stored hash:", admin.password);
-      console.log("Entered password:", password);
-      console.log("Password match:", isMatch);
-
+  
+      // Compare passwords
+      const isMatch = await admin.comparePassword(password);
       if (!isMatch) {
-        console.log("ERROR: Password doesn't match hash");
-        return res
-          .status(401)
-          .json({ status: "error", message: "Invalid credentials" });
+        return res.status(401).json({
+          status: 'error',
+          message: 'Invalid credentials'
+        });
       }
-
-      // ... rest of your JWT code
+  
+      // Create JWT token
+      const token = jwt.sign(
+        { id: admin._id, email: admin.email },
+        process.env.JWT_SECRET,
+        { expiresIn: '1d' }
+      );
+  
+      // Return response without password
+      const adminData = admin.toObject();
+      delete adminData.password;
+  
+      res.status(200).json({
+        status: 'success',
+        token,
+        data: { admin: adminData }
+      });
+  
     } catch (err) {
-      console.error("Login error:", err);
-      res.status(500).json({ status: "error", message: "Server error" });
+      console.error('Login error:', err);
+      res.status(500).json({
+        status: 'error',
+        message: 'Internal server error'
+      });
     }
   },
 
