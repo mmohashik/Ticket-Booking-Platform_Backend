@@ -7,20 +7,14 @@ const {
   updateEvent 
 } = require('../controllers/event.controller');
 const upload = require('../middleware/multer');
+const authMiddleware = require('../middleware/authMiddleware');
 
-// POST - Create new event (with image upload)
-router.post('/', upload.single("image"), postEvent);
+// Add authentication to event management routes
+router.post('/', authMiddleware, upload.single("image"), postEvent);
+router.patch('/:id', authMiddleware, upload.single("image"), updateEvent);
+router.delete('/:id', authMiddleware, deleteEvent);
 
-// GET - Get all events
+// Public route for getting events
 router.get('/', getAllEvents);
 
-// DELETE - Delete an event by ID
-router.delete('/:id', deleteEvent);
-
-// PATCH - Update an event by ID (with optional image upload)
-router.patch('/:id', upload.single("image"), updateEvent);
-// Alternatively for PUT:
-// router.put('/:id', upload.single("image"), updateEvent);
-
 module.exports = router;
-

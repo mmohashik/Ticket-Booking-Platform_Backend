@@ -8,13 +8,20 @@ const adminController = {
     try {
       const { name, email, password, mobile } = req.body;
 
-      // Hash password
-      const hashedPassword = await bcrypt.hash(password, 10);
+      // Check if admin already exists
+      const existingAdmin = await Admin.findOne({ email });
+      if (existingAdmin) {
+        return res.status(400).json({
+          status: "error",
+          message: "Email already in use",
+        });
+      }
 
+      // Create new admin instance
       const admin = new Admin({
         name,
         email,
-        password: hashedPassword,
+        password, // Will be hashed by the pre-save hook
         mobile,
       });
 
@@ -29,6 +36,7 @@ const adminController = {
         data: { admin: adminData },
       });
     } catch (err) {
+      console.error("Create admin error:", err);
       res.status(500).json({
         status: "error",
         message: "Server error",
@@ -36,84 +44,81 @@ const adminController = {
     }
   },
 
-  // Admin login (session-based)
+  // Admin login with JWT
 
-  loginAdmin: async (req, res) => {
-    try {
-      const { email, password } = req.body;
-      
-      // Validate input
-      if (!email || !password) {
-        return res.status(400).json({ 
-          status: 'error',
-          message: 'Email and password are required' 
-        });
-      }
-  
-      // Find admin with password
-      const admin = await Admin.findOne({ email }).select('+password');
-      if (!admin) {
-        return res.status(401).json({
-          status: 'error',
-          message: 'Invalid credentials'
-        });
-      }
-  
-      // Compare passwords
-      const isMatch = await admin.comparePassword(password);
-      if (!isMatch) {
-        return res.status(401).json({
-          status: 'error',
-          message: 'Invalid credentials'
-        });
-      }
-  
-      // Create JWT token
-      const token = jwt.sign(
-        { id: admin._id, email: admin.email },
-        process.env.JWT_SECRET,
-        { expiresIn: '1d' }
-      );
-  
-      // Return response without password
-      const adminData = admin.toObject();
-      delete adminData.password;
-  
-      res.status(200).json({
-        status: 'success',
-        token,
-        data: { admin: adminData }
-      });
-  
-    } catch (err) {
-      console.error('Login error:', err);
-      res.status(500).json({
+loginAdmin: async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    console.log('Login attempt for:', email); // Add logging for debugging
+    
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({ 
         status: 'error',
-        message: 'Internal server error'
+        message: 'Email and password are required' 
       });
     }
-  },
 
-  // Get current admin (session-based)
+    // Find admin with password
+    const admin = await Admin.findOne({ email: email.toLowerCase() }).select('+password');
+    
+    if (!admin) {
+      console.log('Admin not found:', email);
+      return res.status(401).json({
+        status: 'error',
+        message: 'Invalid credentials'
+      });
+    }
+
+    // Compare passwords using the method from admin.model.js
+    const isMatch = await bcrypt.compare(password, admin.password);
+    
+    if (!isMatch) {
+      console.log('Password mismatch for:', email);
+      return res.status(401).json({
+        status: 'error',
+        message: 'Invalid credentials'
+      });
+    }
+
+    // Create JWT token
+    const token = jwt.sign(
+      { id: admin._id, email: admin.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '1d' }
+    );
+
+    // Return response without password
+    const adminData = admin.toObject();
+    delete adminData.password;
+
+    res.status(200).json({
+      status: 'success',
+      token,
+      data: { admin: adminData }
+    });
+
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({
+      status: 'error',
+      message: 'Internal server error'
+    });
+  }
+},
+
+  // Get current admin (JWT-based)
   getCurrentAdmin: async (req, res) => {
     try {
-      if (!req.session.adminId) {
-        return res.status(401).json({
-          status: "error",
-          message: "Not authenticated",
-        });
-      }
-
-      const admin = await Admin.findById(req.session.adminId).select(
-        "-password"
-      );
+      const admin = await Admin.findById(req.adminId).select("-password");
       if (!admin) {
         return res.status(404).json({
           status: "error",
           message: "Admin not found",
         });
       }
-
+  
       res.json({
         status: "success",
         data: { admin },
@@ -152,6 +157,7 @@ const adminController = {
         data: { admins },
       });
     } catch (err) {
+      console.error('Get all admins error:', err);
       res.status(500).json({
         status: "error",
         message: "Server error",
@@ -174,6 +180,7 @@ const adminController = {
         data: { admin },
       });
     } catch (err) {
+      console.error('Get admin error:', err);
       res.status(500).json({
         status: "error",
         message: "Server error",
@@ -185,8 +192,15 @@ const adminController = {
   updateAdmin: async (req, res) => {
     try {
       const updates = req.body;
+      
+      // Prevent password update through this route
+      if (updates.password) {
+        delete updates.password;
+      }
+      
       const admin = await Admin.findByIdAndUpdate(req.params.id, updates, {
         new: true,
+        runValidators: true,
         select: "-password",
       });
 
@@ -202,6 +216,7 @@ const adminController = {
         data: { admin },
       });
     } catch (err) {
+      console.error('Update admin error:', err);
       res.status(500).json({
         status: "error",
         message: "Server error",
@@ -224,6 +239,7 @@ const adminController = {
         message: "Admin deleted",
       });
     } catch (err) {
+      console.error('Delete admin error:', err);
       res.status(500).json({
         status: "error",
         message: "Server error",
@@ -270,9 +286,8 @@ const adminController = {
         });
       }
 
-      // Hash and save new password
-      const salt = await bcrypt.genSalt(10);
-      admin.password = await bcrypt.hash(newPassword, salt);
+      // Set new password and save
+      admin.password = newPassword;
       await admin.save();
 
       // Return success without sensitive data

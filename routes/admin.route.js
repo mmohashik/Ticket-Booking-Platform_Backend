@@ -1,37 +1,20 @@
 const express = require('express');
 const router = express.Router();
-//const adminController = require('../controllers/admin.controller');
-const { 
-    createAdmin, 
-    getAllAdmins, 
-    getAdmin,
-    updateAdmin,
-    deleteAdmin,
-    changePassword, 
-    loginAdmin,
-    getCurrentAdmin
-  } = require('../controllers/admin.controller');
+const adminController = require('../controllers/admin.controller');
 const authMiddleware = require('../middleware/authMiddleware');
 
-// Create Admin
-router.post('/', createAdmin);
+// Public routes
+router.post('/login', adminController.loginAdmin);
 
-// Get All Admins
-router.get('/', getAllAdmins);
+// Protected routes - require authentication
+router.get('/me', authMiddleware, adminController.getCurrentAdmin);
 
-// Get Single Admin
-router.get('/:id', getAdmin);
-
-// Update Admin
-router.patch('/:id', updateAdmin);
-
-// Delete Admin
-router.delete('/:id', deleteAdmin);
-
-// Change Password
-router.patch('/:id/password', changePassword);
-
-router.post('/login', loginAdmin);
-router.get('/me', authMiddleware, getCurrentAdmin);
+// Admin management routes - should be protected
+router.post('/', authMiddleware, adminController.createAdmin);
+router.get('/', authMiddleware, adminController.getAllAdmins);
+router.get('/:id', authMiddleware, adminController.getAdmin);
+router.patch('/:id', authMiddleware, adminController.updateAdmin);
+router.delete('/:id', authMiddleware, adminController.deleteAdmin);
+router.patch('/:id/password', authMiddleware, adminController.changePassword);
 
 module.exports = router;

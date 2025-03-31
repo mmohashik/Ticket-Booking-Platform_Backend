@@ -1,103 +1,205 @@
 const Event = require("../models/event.model");
+const fs = require('fs');
+const path = require('path');
 
-const postEvent = async (req, res) => {
+// Helper function to delete image file
+const deleteImage = (imagePath) => {
   try {
-    const { eventName, eventDescription, eventDate, eventTime, venue, totalTickets, ticketTypes } = req.body;
-    const imagePath = req.file ? `/images/${req.file.filename}` : null;
-
-    const newEvent = new Event({
-      eventName,
-      eventDescription,
-      eventDate,
-      eventTime,
-      venue,
-      totalTickets,
-      ticketTypes: JSON.parse(ticketTypes),
-      image: imagePath,
-    });
-
-    await newEvent.save();
-    res.status(201).json(newEvent);
-  } catch (error) {
-    console.error("Error creating event:", error);
-    res.status(500).json({ message: "Error creating event", error });
-  }
-};
-
-const getAllEvents = async (req, res) => {
-  try {
-    const events = await Event.find();
-    res.status(200).json(events);
-  } catch (error) {
-    console.error("Error fetching events:", error);
-    res.status(500).json({ message: "Error fetching events", error });
-  }
-};
-
-const deleteEvent = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const deletedEvent = await Event.findByIdAndDelete(id);
+    if (!imagePath) return;
     
-    if (!deletedEvent) {
-      return res.status(404).json({ message: "Event not found" });
-    }
+    // Extract filename from path
+    const filename = imagePath.split('/').pop();
+    const filePath = path.join(__dirname, '../public/images', filename);
     
-    res.status(200).json({ message: "Event deleted successfully", deletedEvent });
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log(`Deleted image: ${filename}`);
+    }
   } catch (error) {
-    console.error("Error deleting event:", error);
-    res.status(500).json({ message: "Error deleting event", error });
+    console.error('Error deleting image:', error);
   }
 };
 
-const updateEvent = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const existingEvent = await Event.findById(id);
-    if (!existingEvent) {
-      return res.status(404).json({ message: "Event not found" });
-    }
-
-    const { eventName, eventDescription, eventDate, eventTime, venue, totalTickets, ticketTypes } = req.body;
-    const imagePath = req.file ? `/images/${req.file.filename}` : existingEvent.image;
-
-    // Parse ticketTypes if provided
-    let parsedTicketTypes;
-    if (ticketTypes !== undefined) {
-      try {
-        parsedTicketTypes = JSON.parse(ticketTypes);
-      } catch (error) {
-        return res.status(400).json({ message: "Invalid ticketTypes format" });
+const eventController = {
+  // Create new event
+  postEvent: async (req, res) => {
+    try {
+      const { eventName, eventDescription, eventDate, eventTime, venue, totalTickets, ticketTypes } = req.body;
+      
+      // Validate image upload
+      if (!req.file) {
+        return res.status(400).json({ 
+          status: 'error',
+          message: 'Event image is required' 
+        });
       }
+      
+      // Set image path
+      const imagePath = `/images/${req.file.filename}`;
+      
+      // Parse ticket types if provided as string
+      let parsedTicketTypes;
+      try {
+        parsedTicketTypes = typeof ticketTypes === 'string' 
+          ? JSON.parse(ticketTypes) 
+          : ticketTypes;
+      } catch (error) {
+        return res.status(400).json({ 
+          status: 'error',
+          message: 'Invalid ticketTypes format' 
+        });
+      }
+      
+      // Create new event
+      const newEvent = new Event({
+        eventName,
+        eventDescription,
+        eventDate,
+        eventTime,
+        venue,
+        totalTickets,
+        ticketTypes: parsedTicketTypes,
+        image: imagePath,
+      });
+  
+      await newEvent.save();
+      
+      res.status(201).json({
+        status: 'success',
+        data: { event: newEvent }
+      });
+    } catch (error) {
+      console.error("Error creating event:", error);
+      res.status(500).json({ 
+        status: 'error',
+        message: "Error creating event", 
+        error: error.message 
+      });
     }
+  },
 
-    const updateData = {
-      eventName: eventName !== undefined ? eventName : existingEvent.eventName,
-      eventDescription: eventDescription !== undefined ? eventDescription : existingEvent.eventDescription,
-      eventDate: eventDate !== undefined ? eventDate : existingEvent.eventDate,
-      eventTime: eventTime !== undefined ? eventTime : existingEvent.eventTime,
-      venue: venue !== undefined ? venue : existingEvent.venue,
-      totalTickets: totalTickets !== undefined ? totalTickets : existingEvent.totalTickets,
-      ticketTypes: parsedTicketTypes !== undefined ? parsedTicketTypes : existingEvent.ticketTypes,
-      image: imagePath,
-    };
-
-    const updatedEvent = await Event.findByIdAndUpdate(
-      id,
-      updateData,
-      { new: true, runValidators: true }
-    );
-
-    // Delete old image if a new one is uploaded
-    if (req.file && existingEvent.image) {
-      deleteImage(existingEvent.image);
+  // Get all events
+  getAllEvents: async (req, res) => {
+    try {
+      const events = await Event.find();
+      res.status(200).json({
+        status: 'success',
+        results: events.length,
+        data: { events }
+      });
+    } catch (error) {
+      console.error("Error fetching events:", error);
+      res.status(500).json({ 
+        status: 'error',
+        message: "Error fetching events", 
+        error: error.message 
+      });
     }
+  },
 
-    res.status(200).json(updatedEvent);
-  } catch (error) {
-    console.error("Error updating event:", error);
-    res.status(500).json({ message: "Error updating event", error });
-  }
+  // Delete event
+  deleteEvent: async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      const event = await Event.findById(id);
+      if (!event) {
+        return res.status(404).json({ 
+          status: 'error',
+          message: "Event not found" 
+        });
+      }
+      
+      // Delete image file if it exists
+      if (event.image) {
+        deleteImage(event.image);
+      }
+      
+      // Delete event from database
+      await Event.findByIdAndDelete(id);
+      
+      res.status(200).json({ 
+        status: 'success',
+        message: "Event deleted successfully" 
+      });
+    } catch (error) {
+      console.error("Error deleting event:", error);
+      res.status(500).json({ 
+        status: 'error',
+        message: "Error deleting event", 
+        error: error.message 
+      });
+    }
+  },
+
+  // Update event
+  updateEvent: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { eventName, eventDescription, eventDate, eventTime, venue, totalTickets, ticketTypes } = req.body;
+      
+      // Find existing event
+      const existingEvent = await Event.findById(id);
+      if (!existingEvent) {
+        return res.status(404).json({ 
+          status: 'error',
+          message: "Event not found" 
+        });
+      }
+  
+      // Handle image upload
+      let imagePath = existingEvent.image;
+      if (req.file) {
+        // Delete old image
+        deleteImage(existingEvent.image);
+        // Set new image path
+        imagePath = `/images/${req.file.filename}`;
+      }
+  
+      // Parse ticket types if provided as string
+      let parsedTicketTypes;
+      if (ticketTypes) {
+        try {
+          parsedTicketTypes = typeof ticketTypes === 'string' 
+            ? JSON.parse(ticketTypes) 
+            : ticketTypes;
+        } catch (error) {
+          return res.status(400).json({ 
+            status: 'error',
+            message: 'Invalid ticketTypes format' 
+          });
+        }
+      }
+  
+      // Update event
+      const updatedEvent = await Event.findByIdAndUpdate(
+        id,
+        {
+          eventName: eventName || existingEvent.eventName,
+          eventDescription: eventDescription || existingEvent.eventDescription,
+          eventDate: eventDate || existingEvent.eventDate,
+          eventTime: eventTime || existingEvent.eventTime,
+          venue: venue || existingEvent.venue,
+          totalTickets: totalTickets || existingEvent.totalTickets,
+          ticketTypes: parsedTicketTypes || existingEvent.ticketTypes,
+          image: imagePath,
+        },
+        { new: true, runValidators: true }
+      );
+  
+      res.status(200).json({
+        status: 'success',
+        data: { event: updatedEvent }
+      });
+    } catch (error) {
+      console.error("Error updating event:", error);
+      res.status(500).json({ 
+        status: 'error',
+        message: "Error updating event", 
+        error: error.message 
+      });
+    }
+  },
 };
 
-module.exports = { postEvent, getAllEvents, deleteEvent, updateEvent };
+module.exports = eventController;

@@ -3,7 +3,7 @@ const express = require('express');
 const app = express();
 const mongoose = require('mongoose');
 const eventRoutes = require('./routes/event.route');
-const adminRoutes = require('./routes/admin.route'); // Added admin routes
+const adminRoutes = require('./routes/admin.route');
 const cors = require('cors');
 const path = require('path');
 const helmet = require('helmet');
@@ -23,7 +23,7 @@ if (missingEnvVars.length > 0) {
   }
 }
 
-// Environment variables with better defaults
+// Environment variables with defaults
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/admin-portal';
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
@@ -39,12 +39,14 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 
-// Enhanced logging
+// Logging
 app.use(morgan(process.env.NODE_ENV === 'development' ? 'dev' : 'combined'));
+
+// Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// CORS configuration - Enhanced to prevent connection issues
+// CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = [CLIENT_URL];
@@ -75,7 +77,7 @@ try {
   if (process.env.NODE_ENV === 'production') process.exit(1);
 }
 
-// Static files with proper headers and error handling
+// Static files
 app.use('/images', express.static(imagesDir, {
   setHeaders: (res) => {
     res.set('Cache-Control', 'public, max-age=31536000');
@@ -83,11 +85,11 @@ app.use('/images', express.static(imagesDir, {
   fallthrough: false
 }));
 
-// API routes with versioning
+// API routes
 app.use('/api/events', eventRoutes);
-app.use('/api/admins', adminRoutes); // Added admin routes
+app.use('/api/admins', adminRoutes);
 
-// Enhanced health check endpoint
+// Health check endpoint
 app.get('/api/health', async (req, res) => {
   try {
     const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
@@ -102,7 +104,7 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// Database connection with better error handling and debugging
+// Database connection
 mongoose.set('debug', process.env.NODE_ENV === 'development');
 
 const connectWithRetry = (retries = 5, delay = 5000) => {
@@ -125,7 +127,6 @@ const connectWithRetry = (retries = 5, delay = 5000) => {
   })
   .catch(err => {
     console.error('Failed to connect to MongoDB:', err.message);
-    console.error('Connection URI used:', MONGODB_URI);
     
     if (retries > 0) {
       console.log(`Retrying connection in ${delay/1000} seconds...`);
@@ -139,19 +140,19 @@ const connectWithRetry = (retries = 5, delay = 5000) => {
 
 connectWithRetry();
 
-// Improved error handling middleware
+// Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Error:', {
     message: err.message,
     stack: err.stack,
     url: req.originalUrl,
-    method: req.method,
-    body: req.body
+    method: req.method
   });
   
   const statusCode = err.status || 500;
   res.status(statusCode).json({
-    error: err.message || 'Internal Server Error',
+    status: 'error',
+    message: err.message || 'Internal Server Error',
     timestamp: new Date().toISOString()
   });
 });
@@ -159,21 +160,20 @@ app.use((err, req, res, next) => {
 // 404 handler
 app.use('*', (req, res) => {
   res.status(404).json({
-    error: 'Endpoint not found',
+    status: 'error',
+    message: 'Endpoint not found',
     path: req.originalUrl
   });
 });
 
-// Server startup with enhanced logging
+// Server startup
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode`);
   console.log(`Listening on port ${PORT}`);
   console.log(`API Base URL: http://localhost:${PORT}/api`);
-  console.log(`Allowed CORS origin: ${CLIENT_URL}`);
-  console.log(`MongoDB URI: ${MONGODB_URI}`);
 });
 
-// Handle process termination gracefully
+// Graceful shutdown
 const shutdown = (signal) => {
   console.log(`${signal} received: shutting down gracefully...`);
   server.close(() => {
