@@ -78,24 +78,20 @@ const eventController = {
     }
   },
 
-  // Get all events
-  getAllEvents: async (req, res) => {
-    try {
-      const events = await Event.find();
-      res.status(200).json({
-        status: 'success',
-        results: events.length,
-        data: { events }
-      });
-    } catch (error) {
-      console.error("Error fetching events:", error);
-      res.status(500).json({ 
-        status: 'error',
-        message: "Error fetching events", 
-        error: error.message 
-      });
-    }
-  },
+  // In event.controller.js
+getAllEvents: async (req, res) => {
+  try {
+    const events = await Event.find();
+    res.status(200).json(events); // Just return the array directly
+  } catch (error) {
+    console.error("Error fetching events:", error);
+    res.status(500).json({ 
+      status: 'error',
+      message: "Error fetching events", 
+      error: error.message 
+    });
+  }
+},
 
   // Delete event
   deleteEvent: async (req, res) => {

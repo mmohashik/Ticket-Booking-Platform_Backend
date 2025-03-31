@@ -2,16 +2,20 @@ require('dotenv').config();
 const express = require('express');
 const app = express();
 const mongoose = require('mongoose');
-const eventRoutes = require('./routes/event.route');
-const adminRoutes = require('./routes/admin.route');
+const session = require('express-session');
+const MongoStore = require('connect-mongo');
 const cors = require('cors');
 const path = require('path');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const fs = require('fs');
 
+// Routes
+const eventRoutes = require('./routes/event.route');
+const adminRoutes = require('./routes/admin.route');
+
 // Validate required environment variables
-const requiredEnvVars = ['MONGODB_URI', 'JWT_SECRET'];
+const requiredEnvVars = ['MONGODB_URI', 'SESSION_SECRET'];
 const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
 if (missingEnvVars.length > 0) {
@@ -25,8 +29,9 @@ if (missingEnvVars.length > 0) {
 
 // Environment variables with defaults
 const PORT = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/admin-portal';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/admin-portal';
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
+const SESSION_SECRET = process.env.SESSION_SECRET || 'your_strong_session_secret_here';
 
 // Enhanced middleware configuration
 app.use(helmet({
@@ -46,6 +51,23 @@ app.use(morgan(process.env.NODE_ENV === 'development' ? 'dev' : 'combined'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Session configuration
+app.use(session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  store: MongoStore.create({
+    mongoUrl: MONGODB_URI,
+    ttl: 24 * 60 * 60 // 1 day
+  }),
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 86400000,
+    httpOnly: true,
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+  }
+}));
+
 // CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
@@ -57,7 +79,7 @@ const corsOptions = {
     }
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'X-Requested-With', 'Authorization'],
   credentials: true,
   optionsSuccessStatus: 200
 };

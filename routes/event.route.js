@@ -1,3 +1,4 @@
+// routes/event.route.js
 const express = require('express');
 const router = express.Router();
 const { 
@@ -9,12 +10,12 @@ const {
 const upload = require('../middleware/multer');
 const authMiddleware = require('../middleware/authMiddleware');
 
-// Add authentication to event management routes
+// Protected routes
 router.post('/', authMiddleware, upload.single("image"), postEvent);
 router.patch('/:id', authMiddleware, upload.single("image"), updateEvent);
 router.delete('/:id', authMiddleware, deleteEvent);
 
-// Public route for getting events
+// Public route
 router.get('/', getAllEvents);
 
 module.exports = router;

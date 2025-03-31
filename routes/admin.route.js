@@ -5,11 +5,10 @@ const authMiddleware = require('../middleware/authMiddleware');
 
 // Public routes
 router.post('/login', adminController.loginAdmin);
+router.post('/logout', adminController.logoutAdmin);
 
-// Protected routes - require authentication
+// Protected routes
 router.get('/me', authMiddleware, adminController.getCurrentAdmin);
-
-// Admin management routes - should be protected
 router.post('/', authMiddleware, adminController.createAdmin);
 router.get('/', authMiddleware, adminController.getAllAdmins);
 router.get('/:id', authMiddleware, adminController.getAdmin);

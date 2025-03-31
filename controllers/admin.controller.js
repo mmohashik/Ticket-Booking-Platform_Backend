@@ -1,6 +1,5 @@
 const Admin = require("../models/admin.model");
 const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
 
 const adminController = {
   // Create new admin
@@ -21,7 +20,7 @@ const adminController = {
       const admin = new Admin({
         name,
         email,
-        password, // Will be hashed by the pre-save hook
+        password,
         mobile,
       });
 
@@ -44,86 +43,46 @@ const adminController = {
     }
   },
 
-  // Admin login with JWT
-
-loginAdmin: async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    
-    console.log('Login attempt for:', email); // Add logging for debugging
-    
-    // Validate input
-    if (!email || !password) {
-      return res.status(400).json({ 
-        status: 'error',
-        message: 'Email and password are required' 
-      });
-    }
-
-    // Find admin with password
-    const admin = await Admin.findOne({ email: email.toLowerCase() }).select('+password');
-    
-    if (!admin) {
-      console.log('Admin not found:', email);
-      return res.status(401).json({
-        status: 'error',
-        message: 'Invalid credentials'
-      });
-    }
-
-    // Compare passwords using the method from admin.model.js
-    const isMatch = await bcrypt.compare(password, admin.password);
-    
-    if (!isMatch) {
-      console.log('Password mismatch for:', email);
-      return res.status(401).json({
-        status: 'error',
-        message: 'Invalid credentials'
-      });
-    }
-
-    // Create JWT token
-    const token = jwt.sign(
-      { id: admin._id, email: admin.email },
-      process.env.JWT_SECRET,
-      { expiresIn: '1d' }
-    );
-
-    // Return response without password
-    const adminData = admin.toObject();
-    delete adminData.password;
-
-    res.status(200).json({
-      status: 'success',
-      token,
-      data: { admin: adminData }
-    });
-
-  } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({
-      status: 'error',
-      message: 'Internal server error'
-    });
-  }
-},
-
-  // Get current admin (JWT-based)
-  getCurrentAdmin: async (req, res) => {
+  // Admin Login
+  loginAdmin: async (req, res) => {
     try {
-      const admin = await Admin.findById(req.adminId).select("-password");
+      const { email, password } = req.body;
+
+      // Find admin with password
+      const admin = await Admin.findOne({ email }).select('+password');
       if (!admin) {
-        return res.status(404).json({
+        return res.status(401).json({
           status: "error",
-          message: "Admin not found",
+          message: "Invalid credentials",
         });
       }
-  
+
+      // Check password
+      const isMatch = await bcrypt.compare(password, admin.password);
+      if (!isMatch) {
+        return res.status(401).json({
+          status: "error",
+          message: "Invalid credentials",
+        });
+      }
+
+      // Store admin in session
+      req.session.admin = {
+        id: admin._id,
+        email: admin.email,
+        name: admin.name
+      };
+
+      // Remove password from response
+      const adminData = admin.toObject();
+      delete adminData.password;
+
       res.json({
         status: "success",
-        data: { admin },
+        data: { admin: adminData },
       });
     } catch (err) {
+      console.error("Login error:", err);
       res.status(500).json({
         status: "error",
         message: "Server error",
@@ -131,26 +90,75 @@ loginAdmin: async (req, res) => {
     }
   },
 
-  // Admin logout (session-based)
-  logoutAdmin: (req, res) => {
-    req.session.destroy((err) => {
-      if (err) {
-        return res.status(500).json({
+  // Admin Logout
+  logoutAdmin: async (req, res) => {
+    try {
+      req.session.destroy((err) => {
+        if (err) throw err;
+        
+        res.clearCookie('connect.sid', {
+          path: '/',
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+        });
+        
+        res.json({
+          status: "success",
+          message: "Logged out successfully",
+        });
+      });
+    } catch (err) {
+      console.error("Logout error:", err);
+      res.status(500).json({
+        status: "error",
+        message: "Logout failed",
+      });
+    }
+  },
+
+  // Get current admin
+  getCurrentAdmin: async (req, res) => {
+    try {
+      if (!req.session.admin) {
+        return res.status(401).json({
           status: "error",
-          message: "Logout failed",
+          message: "Not authenticated",
         });
       }
-      res.clearCookie("connect.sid"); // Clear session cookie
+
+      const admin = await Admin.findById(req.session.admin.id).select("-password");
+      if (!admin) {
+        return res.status(404).json({
+          status: "error",
+          message: "Admin not found",
+        });
+      }
+
       res.json({
         status: "success",
-        message: "Logged out successfully",
+        data: { admin },
       });
-    });
+    } catch (err) {
+      console.error("Get current admin error:", err);
+      res.status(500).json({
+        status: "error",
+        message: "Server error",
+      });
+    }
   },
 
   // Get all admins
   getAllAdmins: async (req, res) => {
     try {
+      // Verify admin is authenticated
+      if (!req.session.admin) {
+        return res.status(401).json({
+          status: "error",
+          message: "Not authorized",
+        });
+      }
+
       const admins = await Admin.find({}).select("-password");
       res.json({
         status: "success",
@@ -168,6 +176,14 @@ loginAdmin: async (req, res) => {
   // Get single admin
   getAdmin: async (req, res) => {
     try {
+      // Verify admin is authenticated
+      if (!req.session.admin) {
+        return res.status(401).json({
+          status: "error",
+          message: "Not authorized",
+        });
+      }
+
       const admin = await Admin.findById(req.params.id).select("-password");
       if (!admin) {
         return res.status(404).json({
@@ -191,6 +207,14 @@ loginAdmin: async (req, res) => {
   // Update admin
   updateAdmin: async (req, res) => {
     try {
+      // Verify admin is authenticated
+      if (!req.session.admin) {
+        return res.status(401).json({
+          status: "error",
+          message: "Not authorized",
+        });
+      }
+
       const updates = req.body;
       
       // Prevent password update through this route
@@ -227,6 +251,14 @@ loginAdmin: async (req, res) => {
   // Delete admin
   deleteAdmin: async (req, res) => {
     try {
+      // Verify admin is authenticated
+      if (!req.session.admin) {
+        return res.status(401).json({
+          status: "error",
+          message: "Not authorized",
+        });
+      }
+
       const admin = await Admin.findByIdAndDelete(req.params.id);
       if (!admin) {
         return res.status(404).json({
@@ -250,6 +282,14 @@ loginAdmin: async (req, res) => {
   // Change password
   changePassword: async (req, res) => {
     try {
+      // Verify admin is authenticated
+      if (!req.session.admin) {
+        return res.status(401).json({
+          status: "error",
+          message: "Not authorized",
+        });
+      }
+
       const { currentPassword, newPassword } = req.body;
       const adminId = req.params.id;
 
@@ -278,7 +318,7 @@ loginAdmin: async (req, res) => {
       }
 
       // Verify current password
-      const isMatch = await admin.comparePassword(currentPassword);
+      const isMatch = await bcrypt.compare(currentPassword, admin.password);
       if (!isMatch) {
         return res.status(401).json({
           status: "error",
