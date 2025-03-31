@@ -1,12 +1,13 @@
 const Admin = require("../models/admin.model");
 const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 
 const adminController = {
   // Create new admin
   createAdmin: async (req, res) => {
     try {
       const { name, email, password, mobile } = req.body;
-      
+
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -14,7 +15,7 @@ const adminController = {
         name,
         email,
         password: hashedPassword,
-        mobile
+        mobile,
       });
 
       await admin.save();
@@ -24,29 +25,136 @@ const adminController = {
       delete adminData.password;
 
       res.status(201).json({
-        status: 'success',
-        data: { admin: adminData }
+        status: "success",
+        data: { admin: adminData },
       });
     } catch (err) {
       res.status(500).json({
-        status: 'error',
-        message: 'Server error'
+        status: "error",
+        message: "Server error",
       });
     }
+  },
+
+  // Admin login (session-based)
+
+  loginAdmin: async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      // Validate input
+      if (!email || !password) {
+        return res.status(400).json({ 
+          status: 'error',
+          message: 'Email and password are required' 
+        });
+      }
+  
+      // Find admin with password
+      const admin = await Admin.findOne({ email }).select('+password');
+      if (!admin) {
+        return res.status(401).json({
+          status: 'error',
+          message: 'Invalid credentials'
+        });
+      }
+  
+      // Compare passwords
+      const isMatch = await admin.comparePassword(password);
+      if (!isMatch) {
+        return res.status(401).json({
+          status: 'error',
+          message: 'Invalid credentials'
+        });
+      }
+  
+      // Create JWT token
+      const token = jwt.sign(
+        { id: admin._id, email: admin.email },
+        process.env.JWT_SECRET,
+        { expiresIn: '1d' }
+      );
+  
+      // Return response without password
+      const adminData = admin.toObject();
+      delete adminData.password;
+  
+      res.status(200).json({
+        status: 'success',
+        token,
+        data: { admin: adminData }
+      });
+  
+    } catch (err) {
+      console.error('Login error:', err);
+      res.status(500).json({
+        status: 'error',
+        message: 'Internal server error'
+      });
+    }
+  },
+
+  // Get current admin (session-based)
+  getCurrentAdmin: async (req, res) => {
+    try {
+      if (!req.session.adminId) {
+        return res.status(401).json({
+          status: "error",
+          message: "Not authenticated",
+        });
+      }
+
+      const admin = await Admin.findById(req.session.adminId).select(
+        "-password"
+      );
+      if (!admin) {
+        return res.status(404).json({
+          status: "error",
+          message: "Admin not found",
+        });
+      }
+
+      res.json({
+        status: "success",
+        data: { admin },
+      });
+    } catch (err) {
+      res.status(500).json({
+        status: "error",
+        message: "Server error",
+      });
+    }
+  },
+
+  // Admin logout (session-based)
+  logoutAdmin: (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({
+          status: "error",
+          message: "Logout failed",
+        });
+      }
+      res.clearCookie("connect.sid"); // Clear session cookie
+      res.json({
+        status: "success",
+        message: "Logged out successfully",
+      });
+    });
   },
 
   // Get all admins
   getAllAdmins: async (req, res) => {
     try {
-      const admins = await Admin.find({}).select('-password');
+      const admins = await Admin.find({}).select("-password");
       res.json({
-        status: 'success',
-        data: { admins }
+        status: "success",
+        data: { admins },
       });
     } catch (err) {
       res.status(500).json({
-        status: 'error',
-        message: 'Server error'
+        status: "error",
+        message: "Server error",
       });
     }
   },
@@ -54,21 +162,21 @@ const adminController = {
   // Get single admin
   getAdmin: async (req, res) => {
     try {
-      const admin = await Admin.findById(req.params.id).select('-password');
+      const admin = await Admin.findById(req.params.id).select("-password");
       if (!admin) {
         return res.status(404).json({
-          status: 'error',
-          message: 'Admin not found'
+          status: "error",
+          message: "Admin not found",
         });
       }
       res.json({
-        status: 'success',
-        data: { admin }
+        status: "success",
+        data: { admin },
       });
     } catch (err) {
       res.status(500).json({
-        status: 'error',
-        message: 'Server error'
+        status: "error",
+        message: "Server error",
       });
     }
   },
@@ -77,27 +185,26 @@ const adminController = {
   updateAdmin: async (req, res) => {
     try {
       const updates = req.body;
-      const admin = await Admin.findByIdAndUpdate(
-        req.params.id,
-        updates,
-        { new: true, select: '-password' }
-      );
-      
+      const admin = await Admin.findByIdAndUpdate(req.params.id, updates, {
+        new: true,
+        select: "-password",
+      });
+
       if (!admin) {
         return res.status(404).json({
-          status: 'error',
-          message: 'Admin not found'
+          status: "error",
+          message: "Admin not found",
         });
       }
-      
+
       res.json({
-        status: 'success',
-        data: { admin }
+        status: "success",
+        data: { admin },
       });
     } catch (err) {
       res.status(500).json({
-        status: 'error',
-        message: 'Server error'
+        status: "error",
+        message: "Server error",
       });
     }
   },
@@ -108,18 +215,18 @@ const adminController = {
       const admin = await Admin.findByIdAndDelete(req.params.id);
       if (!admin) {
         return res.status(404).json({
-          status: 'error',
-          message: 'Admin not found'
+          status: "error",
+          message: "Admin not found",
         });
       }
       res.json({
-        status: 'success',
-        message: 'Admin deleted'
+        status: "success",
+        message: "Admin deleted",
       });
     } catch (err) {
       res.status(500).json({
-        status: 'error',
-        message: 'Server error'
+        status: "error",
+        message: "Server error",
       });
     }
   },
@@ -133,24 +240,24 @@ const adminController = {
       // Validate input
       if (!currentPassword || !newPassword) {
         return res.status(400).json({
-          status: 'error',
-          message: 'Current password and new password are required'
+          status: "error",
+          message: "Current password and new password are required",
         });
       }
 
       if (newPassword.length < 6) {
         return res.status(400).json({
-          status: 'error',
-          message: 'Password must be at least 6 characters'
+          status: "error",
+          message: "Password must be at least 6 characters",
         });
       }
 
       // Find admin with password
-      const admin = await Admin.findById(adminId).select('+password');
+      const admin = await Admin.findById(adminId).select("+password");
       if (!admin) {
         return res.status(404).json({
-          status: 'error',
-          message: 'Admin not found'
+          status: "error",
+          message: "Admin not found",
         });
       }
 
@@ -158,8 +265,8 @@ const adminController = {
       const isMatch = await admin.comparePassword(currentPassword);
       if (!isMatch) {
         return res.status(401).json({
-          status: 'error',
-          message: 'Current password is incorrect'
+          status: "error",
+          message: "Current password is incorrect",
         });
       }
 
@@ -173,19 +280,18 @@ const adminController = {
       delete adminData.password;
 
       res.json({
-        status: 'success',
-        message: 'Password updated successfully',
-        data: { admin: adminData }
+        status: "success",
+        message: "Password updated successfully",
+        data: { admin: adminData },
       });
     } catch (err) {
-      console.error('Password change error:', err);
+      console.error("Password change error:", err);
       res.status(500).json({
-        status: 'error',
-        message: 'Internal server error'
+        status: "error",
+        message: "Internal server error",
       });
     }
-  }
+  },
 };
-
 
 module.exports = adminController;
