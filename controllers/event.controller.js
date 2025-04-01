@@ -1,129 +1,154 @@
-const Event = require("../models/event.model");
-const fs = require('fs');
-const path = require('path');
-
-// Helper function to delete image file
-const deleteImage = (imagePath) => {
-  try {
-    if (!imagePath) return;
-    
-    // Extract filename from path
-    const filename = imagePath.split('/').pop();
-    const filePath = path.join(__dirname, '../public/images', filename);
-    
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-      console.log(`Deleted image: ${filename}`);
-    }
-  } catch (error) {
-    console.error('Error deleting image:', error);
-  }
-};
+const Event = require('../models/event.model');
 
 const eventController = {
-  // Create new event
-  postEvent: async (req, res) => {
+  // Get all events
+  getAllEvents: async (req, res) => {
     try {
-      const { eventName, eventDescription, eventDate, eventTime, venue, totalTickets, ticketTypes } = req.body;
-      
-      // Validate image upload
-      if (!req.file) {
-        return res.status(400).json({ 
-          status: 'error',
-          message: 'Event image is required' 
-        });
-      }
-      
-      // Set image path
-      const imagePath = `/images/${req.file.filename}`;
-      
-      // Parse ticket types if provided as string
-      let parsedTicketTypes;
-      try {
-        parsedTicketTypes = typeof ticketTypes === 'string' 
-          ? JSON.parse(ticketTypes) 
-          : ticketTypes;
-      } catch (error) {
-        return res.status(400).json({ 
-          status: 'error',
-          message: 'Invalid ticketTypes format' 
-        });
-      }
-      
-      // Create new event
-      const newEvent = new Event({
-        eventName,
-        eventDescription,
-        eventDate,
-        eventTime,
-        venue,
-        totalTickets,
-        ticketTypes: parsedTicketTypes,
-        image: imagePath,
+      const events = await Event.find().sort({ createdAt: -1 });
+      res.status(200).json({ 
+        status: 'success', 
+        data: events,
+        count: events.length
       });
-  
-      await newEvent.save();
-      
-      res.status(201).json({
-        status: 'success',
-        data: { event: newEvent }
-      });
-    } catch (error) {
-      console.error("Error creating event:", error);
+    } catch (err) {
+      console.error('Error fetching events:', err);
       res.status(500).json({ 
-        status: 'error',
-        message: "Error creating event", 
-        error: error.message 
+        status: 'error', 
+        message: 'Failed to fetch events',
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
       });
     }
   },
 
-  // In event.controller.js
-getAllEvents: async (req, res) => {
-  try {
-    const events = await Event.find();
-    res.status(200).json(events); // Just return the array directly
-  } catch (error) {
-    console.error("Error fetching events:", error);
-    res.status(500).json({ 
-      status: 'error',
-      message: "Error fetching events", 
-      error: error.message 
-    });
-  }
-},
-
-  // Delete event
-  deleteEvent: async (req, res) => {
+  createEvent: async (req, res) => {
     try {
-      const { id } = req.params;
+      const { 
+        eventName, 
+        eventDescription, 
+        eventDate, 
+        eventTime, 
+        venue, 
+        totalTickets, 
+        ticketTypes, 
+        image,
+        status 
+      } = req.body;
+  
+      // Validate required fields
+      if (!eventName || !eventDate || !eventTime || !venue || !totalTickets || !image) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'eventName, eventDate, eventTime, venue, totalTickets, and image are required fields'
+        });
+      }
+  
+      // Validate date format
+      if (isNaN(new Date(eventDate))) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Invalid date format'
+        });
+      }
+  
+      // Validate ticket types if provided
+      if (ticketTypes && Array.isArray(ticketTypes)) {
+        for (const ticketType of ticketTypes) {
+          if (!ticketType.type || !ticketType.price) {
+            return res.status(400).json({
+              status: 'error',
+              message: 'Each ticket type must have both type and price fields'
+            });
+          }
+          if (isNaN(ticketType.price)) {
+            return res.status(400).json({
+              status: 'error',
+              message: 'Ticket price must be a number'
+            });
+          }
+        }
+      }
+  
+      // Create new event
+      const newEvent = new Event({
+        eventName,
+        eventDescription: eventDescription || '',
+        eventDate: new Date(eventDate),
+        eventTime,
+        venue,
+        totalTickets: Number(totalTickets),
+        ticketTypes: ticketTypes || [],
+        image,
+        status: status || 'Upcoming'
+      });
+  
+      // Save to database
+      const savedEvent = await newEvent.save();
+  
+      res.status(201).json({
+        status: 'success',
+        data: savedEvent,
+        message: 'Event created successfully'
+      });
+  
+    } catch (err) {
+      console.error('Error creating event:', err);
       
-      const event = await Event.findById(id);
+      // Handle duplicate key errors
+      if (err.code === 11000) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Event with this name already exists'
+        });
+      }
+  
+      // Handle validation errors
+      if (err.name === 'ValidationError') {
+        const errors = Object.values(err.errors).map(el => el.message);
+        return res.status(400).json({
+          status: 'error',
+          message: 'Validation failed',
+          errors
+        });
+      }
+  
+      res.status(500).json({
+        status: 'error',
+        message: 'Failed to create event',
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+      });
+    }
+  },
+
+  // Get single event
+  getEvent: async (req, res) => {
+    try {
+      const event = await Event.findById(req.params.id);
+      
       if (!event) {
         return res.status(404).json({ 
-          status: 'error',
-          message: "Event not found" 
+          status: 'error', 
+          message: 'Event not found' 
         });
       }
       
-      // Delete image file if it exists
-      if (event.image) {
-        deleteImage(event.image);
+      res.status(200).json({ 
+        status: 'success', 
+        data: event 
+      });
+    } catch (err) {
+      console.error('Error fetching event:', err);
+      
+      if (err.name === 'CastError') {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Invalid event ID format'
+        });
       }
       
-      // Delete event from database
-      await Event.findByIdAndDelete(id);
-      
-      res.status(200).json({ 
-        status: 'success',
-        message: "Event deleted successfully" 
-      });
-    } catch (error) {
-      console.error("Error deleting event:", error);
       res.status(500).json({ 
-        status: 'error',
-        message: "Error deleting event", 
-        error: error.message 
+        status: 'error', 
+        message: 'Failed to fetch event',
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
       });
     }
   },
@@ -131,71 +156,121 @@ getAllEvents: async (req, res) => {
   // Update event
   updateEvent: async (req, res) => {
     try {
-      const { id } = req.params;
-      const { eventName, eventDescription, eventDate, eventTime, venue, totalTickets, ticketTypes } = req.body;
-      
-      // Find existing event
-      const existingEvent = await Event.findById(id);
-      if (!existingEvent) {
-        return res.status(404).json({ 
+      const { title, description, date, location, image } = req.body;
+
+      // Validate date if provided
+      if (date && isNaN(new Date(date))) {
+        return res.status(400).json({
           status: 'error',
-          message: "Event not found" 
+          message: 'Invalid date format'
         });
       }
-  
-      // Handle image upload
-      let imagePath = existingEvent.image;
-      if (req.file) {
-        // Delete old image
-        deleteImage(existingEvent.image);
-        // Set new image path
-        imagePath = `/images/${req.file.filename}`;
+
+      const updateData = {
+        ...req.body,
+        updatedAt: new Date()
+      };
+
+      // If date is being updated, convert to Date object
+      if (date) {
+        updateData.date = new Date(date);
       }
-  
-      // Parse ticket types if provided as string
-      let parsedTicketTypes;
-      if (ticketTypes) {
-        try {
-          parsedTicketTypes = typeof ticketTypes === 'string' 
-            ? JSON.parse(ticketTypes) 
-            : ticketTypes;
-        } catch (error) {
-          return res.status(400).json({ 
-            status: 'error',
-            message: 'Invalid ticketTypes format' 
-          });
-        }
-      }
-  
-      // Update event
+
       const updatedEvent = await Event.findByIdAndUpdate(
-        id,
-        {
-          eventName: eventName || existingEvent.eventName,
-          eventDescription: eventDescription || existingEvent.eventDescription,
-          eventDate: eventDate || existingEvent.eventDate,
-          eventTime: eventTime || existingEvent.eventTime,
-          venue: venue || existingEvent.venue,
-          totalTickets: totalTickets || existingEvent.totalTickets,
-          ticketTypes: parsedTicketTypes || existingEvent.ticketTypes,
-          image: imagePath,
-        },
-        { new: true, runValidators: true }
+        req.params.id,
+        updateData,
+        { 
+          new: true,
+          runValidators: true 
+        }
       );
-  
+
+      if (!updatedEvent) {
+        return res.status(404).json({ 
+          status: 'error', 
+          message: 'Event not found' 
+        });
+      }
+
       res.status(200).json({
         status: 'success',
-        data: { event: updatedEvent }
+        data: updatedEvent,
+        message: 'Event updated successfully'
       });
-    } catch (error) {
-      console.error("Error updating event:", error);
-      res.status(500).json({ 
+
+    } catch (err) {
+      console.error('Error updating event:', err);
+      
+      // Handle duplicate key errors
+      if (err.code === 11000) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Event with this title already exists'
+        });
+      }
+
+      // Handle validation errors
+      if (err.name === 'ValidationError') {
+        const errors = Object.values(err.errors).map(el => el.message);
+        return res.status(400).json({
+          status: 'error',
+          message: 'Validation failed',
+          errors
+        });
+      }
+
+      if (err.name === 'CastError') {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Invalid event ID format'
+        });
+      }
+
+      res.status(500).json({
         status: 'error',
-        message: "Error updating event", 
-        error: error.message 
+        message: 'Failed to update event',
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
       });
     }
   },
+
+  // Delete event
+  deleteEvent: async (req, res) => {
+    try {
+      const deletedEvent = await Event.findByIdAndDelete(req.params.id);
+      
+      if (!deletedEvent) {
+        return res.status(404).json({ 
+          status: 'error', 
+          message: 'Event not found' 
+        });
+      }
+      
+      res.status(200).json({
+        status: 'success',
+        message: 'Event deleted successfully',
+        data: {
+          id: deletedEvent._id,
+          title: deletedEvent.title
+        }
+      });
+    } catch (err) {
+      console.error('Error deleting event:', err);
+      
+      if (err.name === 'CastError') {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Invalid event ID format'
+        });
+      }
+      
+      res.status(500).json({ 
+        status: 'error', 
+        message: 'Failed to delete event',
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+      });
+    }
+  }
 };
 
 module.exports = eventController;

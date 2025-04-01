@@ -1,21 +1,20 @@
-// routes/event.route.js
 const express = require('express');
 const router = express.Router();
-const { 
-  postEvent, 
-  getAllEvents, 
-  deleteEvent,
-  updateEvent 
-} = require('../controllers/event.controller');
-const upload = require('../middleware/multer');
-const authMiddleware = require('../middleware/authMiddleware');
+const eventController = require('../controllers/event.controller');
 
-// Protected routes
-router.post('/', authMiddleware, upload.single("image"), postEvent);
-router.patch('/:id', authMiddleware, upload.single("image"), updateEvent);
-router.delete('/:id', authMiddleware, deleteEvent);
+// GET /api/events - Get all events
+router.get('/', eventController.getAllEvents);
 
-// Public route
-router.get('/', getAllEvents);
+// POST /api/events - Create new event
+router.post('/', eventController.createEvent);
+
+// GET /api/events/:id - Get single event
+router.get('/:id', eventController.getEvent);
+
+// PUT /api/events/:id - Update event
+router.put('/:id', eventController.updateEvent);
+
+// DELETE /api/events/:id - Delete event
+router.delete('/:id', eventController.deleteEvent);
 
 module.exports = router;
