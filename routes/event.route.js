@@ -1,26 +1,20 @@
 const express = require('express');
 const router = express.Router();
-const { 
-  postEvent, 
-  getAllEvents, 
-  deleteEvent,
-  updateEvent 
-} = require('../controllers/event.controller');
+const eventController = require('../controllers/event.controller');
 const upload = require('../middleware/multer');
 
-// POST - Create new event (with image upload)
-router.post('/', upload.single("image"), postEvent);
+router.post('/', upload.single('image'), eventController.createEvent);
 
-// GET - Get all events
-router.get('/', getAllEvents);
+// GET /api/events - Get all events
+router.get('/', eventController.getAllEvents);
 
-// DELETE - Delete an event by ID
-router.delete('/:id', deleteEvent);
+// GET /api/events/:id - Get single event
+router.get('/:id', eventController.getEvent);
 
-// PATCH - Update an event by ID (with optional image upload)
-router.patch('/:id', upload.single("image"), updateEvent);
-// Alternatively for PUT:
-// router.put('/:id', upload.single("image"), updateEvent);
+// PUT /api/events/:id - Update event
+router.put('/:id', eventController.updateEvent);
+
+// DELETE /api/events/:id - Delete event
+router.delete('/:id', eventController.deleteEvent);
 
 module.exports = router;
-

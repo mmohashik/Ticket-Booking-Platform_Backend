@@ -1,103 +1,228 @@
-const Event = require("../models/event.model");
+const Event = require('../models/event.model');
+const path = require('path');
+const fs = require('fs');
 
-const postEvent = async (req, res) => {
-  try {
-    const { eventName, eventDescription, eventDate, eventTime, venue, totalTickets, ticketTypes } = req.body;
-    const imagePath = req.file ? `/images/${req.file.filename}` : null;
-
-    const newEvent = new Event({
-      eventName,
-      eventDescription,
-      eventDate,
-      eventTime,
-      venue,
-      totalTickets,
-      ticketTypes: JSON.parse(ticketTypes),
-      image: imagePath,
-    });
-
-    await newEvent.save();
-    res.status(201).json(newEvent);
-  } catch (error) {
-    console.error("Error creating event:", error);
-    res.status(500).json({ message: "Error creating event", error });
-  }
-};
-
-const getAllEvents = async (req, res) => {
-  try {
-    const events = await Event.find();
-    res.status(200).json(events);
-  } catch (error) {
-    console.error("Error fetching events:", error);
-    res.status(500).json({ message: "Error fetching events", error });
-  }
-};
-
-const deleteEvent = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const deletedEvent = await Event.findByIdAndDelete(id);
-    
-    if (!deletedEvent) {
-      return res.status(404).json({ message: "Event not found" });
+const eventController = {
+  // Get all events
+  getAllEvents: async (req, res) => {
+    try {
+      const events = await Event.find().sort({ createdAt: -1 });
+      res.status(200).json({ 
+        status: 'success', 
+        data: events,
+        count: events.length
+      });
+    } catch (err) {
+      console.error('Error fetching events:', err);
+      res.status(500).json({ 
+        status: 'error', 
+        message: 'Failed to fetch events',
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+      });
     }
-    
-    res.status(200).json({ message: "Event deleted successfully", deletedEvent });
-  } catch (error) {
-    console.error("Error deleting event:", error);
-    res.status(500).json({ message: "Error deleting event", error });
-  }
-};
+  },
 
-const updateEvent = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const existingEvent = await Event.findById(id);
-    if (!existingEvent) {
-      return res.status(404).json({ message: "Event not found" });
-    }
-
-    const { eventName, eventDescription, eventDate, eventTime, venue, totalTickets, ticketTypes } = req.body;
-    const imagePath = req.file ? `/images/${req.file.filename}` : existingEvent.image;
-
-    // Parse ticketTypes if provided
-    let parsedTicketTypes;
-    if (ticketTypes !== undefined) {
-      try {
-        parsedTicketTypes = JSON.parse(ticketTypes);
-      } catch (error) {
-        return res.status(400).json({ message: "Invalid ticketTypes format" });
+  // Create new event
+  createEvent: async (req, res) => {
+    try {
+      // Check if file was uploaded
+      if (!req.file) {
+        return res.status(400).json({ error: "Event image is required" });
       }
+  
+      // Prepare event data
+      const eventData = {
+        eventName: req.body.eventName,
+        eventDescription: req.body.eventDescription,
+        eventDate: req.body.eventDate,
+        eventTime: req.body.eventTime,
+        venue: req.body.venue,
+        totalTickets: req.body.totalTickets,
+        status: req.body.status || "Upcoming",
+        image: `/images/${req.file.filename}`, // This is the path that will be saved in DB
+      };
+  
+      // Handle ticket types
+      if (req.body.ticketTypes && typeof req.body.ticketTypes === 'string') {
+        eventData.ticketTypes = JSON.parse(req.body.ticketTypes);
+      } else if (req.body.ticketTypes) {
+        eventData.ticketTypes = req.body.ticketTypes;
+      }
+  
+      // Create and save the event
+      const newEvent = new Event(eventData);
+      const savedEvent = await newEvent.save();
+  
+      res.status(201).json(savedEvent);
+    } catch (err) {
+      // Delete the uploaded file if error occurs
+      if (req.file) {
+        fs.unlink(path.join(__dirname, '../public', req.file.path), (err) => {
+          if (err) console.error('Error deleting uploaded file:', err);
+        });
+      }
+      res.status(500).json({ error: err.message });
+    }
+  },
+
+  // Get single event
+getEvent: async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id);
+    
+    if (!event) {
+      return res.status(404).json({ 
+        status: 'error', 
+        message: 'Event not found' 
+      });
     }
 
-    const updateData = {
-      eventName: eventName !== undefined ? eventName : existingEvent.eventName,
-      eventDescription: eventDescription !== undefined ? eventDescription : existingEvent.eventDescription,
-      eventDate: eventDate !== undefined ? eventDate : existingEvent.eventDate,
-      eventTime: eventTime !== undefined ? eventTime : existingEvent.eventTime,
-      venue: venue !== undefined ? venue : existingEvent.venue,
-      totalTickets: totalTickets !== undefined ? totalTickets : existingEvent.totalTickets,
-      ticketTypes: parsedTicketTypes !== undefined ? parsedTicketTypes : existingEvent.ticketTypes,
-      image: imagePath,
+    // Create a proper image URL
+    const eventWithFullImageUrl = {
+      ...event._doc,
+      image: event.image ? `${req.protocol}://${req.get('host')}${event.image}` : null
     };
-
-    const updatedEvent = await Event.findByIdAndUpdate(
-      id,
-      updateData,
-      { new: true, runValidators: true }
-    );
-
-    // Delete old image if a new one is uploaded
-    if (req.file && existingEvent.image) {
-      deleteImage(existingEvent.image);
+    
+    res.status(200).json({ 
+      status: 'success', 
+      data: eventWithFullImageUrl 
+    });
+  } catch (err) {
+    console.error('Error fetching event:', err);
+    
+    if (err.name === 'CastError') {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid event ID format'
+      });
     }
+    
+    res.status(500).json({ 
+      status: 'error', 
+      message: 'Failed to fetch event',
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+},
 
-    res.status(200).json(updatedEvent);
-  } catch (error) {
-    console.error("Error updating event:", error);
-    res.status(500).json({ message: "Error updating event", error });
+  // Update event
+  updateEvent: async (req, res) => {
+    try {
+      const { title, description, date, location, image } = req.body;
+
+      // Validate date if provided
+      if (date && isNaN(new Date(date))) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Invalid date format'
+        });
+      }
+
+      const updateData = {
+        ...req.body,
+        updatedAt: new Date()
+      };
+
+      // If date is being updated, convert to Date object
+      if (date) {
+        updateData.date = new Date(date);
+      }
+
+      const updatedEvent = await Event.findByIdAndUpdate(
+        req.params.id,
+        updateData,
+        { 
+          new: true,
+          runValidators: true 
+        }
+      );
+
+      if (!updatedEvent) {
+        return res.status(404).json({ 
+          status: 'error', 
+          message: 'Event not found' 
+        });
+      }
+
+      res.status(200).json({
+        status: 'success',
+        data: updatedEvent,
+        message: 'Event updated successfully'
+      });
+
+    } catch (err) {
+      console.error('Error updating event:', err);
+      
+      // Handle duplicate key errors
+      if (err.code === 11000) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Event with this title already exists'
+        });
+      }
+
+      // Handle validation errors
+      if (err.name === 'ValidationError') {
+        const errors = Object.values(err.errors).map(el => el.message);
+        return res.status(400).json({
+          status: 'error',
+          message: 'Validation failed',
+          errors
+        });
+      }
+
+      if (err.name === 'CastError') {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Invalid event ID format'
+        });
+      }
+
+      res.status(500).json({
+        status: 'error',
+        message: 'Failed to update event',
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+      });
+    }
+  },
+
+  // Delete event
+  deleteEvent: async (req, res) => {
+    try {
+      const deletedEvent = await Event.findByIdAndDelete(req.params.id);
+      
+      if (!deletedEvent) {
+        return res.status(404).json({ 
+          status: 'error', 
+          message: 'Event not found' 
+        });
+      }
+      
+      res.status(200).json({
+        status: 'success',
+        message: 'Event deleted successfully',
+        data: {
+          id: deletedEvent._id,
+          title: deletedEvent.title
+        }
+      });
+    } catch (err) {
+      console.error('Error deleting event:', err);
+      
+      if (err.name === 'CastError') {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Invalid event ID format'
+        });
+      }
+      
+      res.status(500).json({ 
+        status: 'error', 
+        message: 'Failed to delete event',
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+      });
+    }
   }
 };
 
-module.exports = { postEvent, getAllEvents, deleteEvent, updateEvent };
+module.exports = eventController;

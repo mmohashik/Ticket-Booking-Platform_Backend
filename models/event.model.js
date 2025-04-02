@@ -1,20 +1,24 @@
 const mongoose = require("mongoose");
 
 const TicketTypeSchema = new mongoose.Schema({
-  type: { type: String, required: true },
-  price: { type: Number, required: true },
+  type: String,
+  price: Number
 });
 
 const EventSchema = new mongoose.Schema({
-  eventName: { type: String, required: true },
-  eventDescription: { type: String, required: false },
-  eventDate: { type: Date, required: true },
-  eventTime: { type: String, required: true },
-  venue: { type: String, required: true },
-  totalTickets: { type: Number, required: true },
+  eventName: String,
+  eventDescription: String,
+  eventDate: Date,
+  eventTime: String,
+  venue: String,
+  totalTickets: Number,
   ticketTypes: [TicketTypeSchema],
-  image: { type: String, required: true },
-  status: { type: String, enum: ["Upcoming", "Ongoing", "Completed"], default: "Upcoming" },
+  image: String,
+  status: String,
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
 });
 
 module.exports = mongoose.model("Event", EventSchema);
