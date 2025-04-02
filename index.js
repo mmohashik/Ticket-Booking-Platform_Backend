@@ -6,11 +6,7 @@ const cors = require('cors');
 const path = require('path');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const fs = require('fs');
-
-// Routes
-const eventRoutes = require('./routes/event.route');
-const adminRoutes = require('./routes/admin.route');
+const fs = require('fs'); // Only declare this once at the top
 
 // Environment variables
 const PORT = process.env.PORT || 3000;
@@ -24,16 +20,31 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 // Middleware
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: false // or { policy: "cross-origin" }
+}));
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors({ origin: CLIENT_URL }));
+app.use(cors({
+  origin: true, // or specify your frontend URL
+  credentials: true,
+  exposedHeaders: ['Content-Type', 'Authorization', 'Cross-Origin-Resource-Policy']
+}));
 
-// Serve static files from public directory
-app.use('/public', express.static(path.join(__dirname, 'public')));
+// Serve static files with proper headers
+app.use('/images', express.static(path.join(__dirname, 'public', 'images'), {
+  setHeaders: (res) => {
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.set('Access-Control-Allow-Origin', '*');
+  }
+}));
 
-// API routes
+// Routes
+const eventRoutes = require('./routes/event.route');
+const adminRoutes = require('./routes/admin.route');
+
 app.use('/api/events', eventRoutes);
 app.use('/api/admins', adminRoutes);
 

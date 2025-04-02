@@ -4,23 +4,30 @@ const fs = require('fs');
 
 const eventController = {
   // Get all events
-  getAllEvents: async (req, res) => {
-    try {
-      const events = await Event.find().sort({ createdAt: -1 });
-      res.status(200).json({ 
-        status: 'success', 
-        data: events,
-        count: events.length
-      });
-    } catch (err) {
-      console.error('Error fetching events:', err);
-      res.status(500).json({ 
-        status: 'error', 
-        message: 'Failed to fetch events',
-        error: process.env.NODE_ENV === 'development' ? err.message : undefined
-      });
-    }
-  },
+getAllEvents: async (req, res) => {
+  try {
+    const events = await Event.find().sort({ createdAt: -1 });
+    
+    // Add full image URLs to each event
+    const eventsWithFullImageUrls = events.map(event => ({
+      ...event._doc,
+      image: event.image ? `${req.protocol}://${req.get('host')}${event.image}` : null
+    }));
+    
+    res.status(200).json({ 
+      status: 'success', 
+      data: eventsWithFullImageUrls,
+      count: events.length
+    });
+  } catch (err) {
+    console.error('Error fetching events:', err);
+    res.status(500).json({ 
+      status: 'error', 
+      message: 'Failed to fetch events',
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+},
 
   // Create new event
   createEvent: async (req, res) => {

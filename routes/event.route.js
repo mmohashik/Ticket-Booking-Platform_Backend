@@ -2,6 +2,22 @@ const express = require('express');
 const router = express.Router();
 const eventController = require('../controllers/event.controller');
 const upload = require('../middleware/multer');
+const fs = require('fs');
+const path = require('path');
+
+// Add this route before module.exports
+router.get('/images/:filename', (req, res) => {
+    const filePath = path.join(__dirname, '../public/images', req.params.filename);
+    
+    if (fs.existsSync(filePath)) {
+      res.sendFile(filePath);
+    } else {
+      res.status(404).json({ 
+        status: 'error',
+        message: 'Image not found'
+      });
+    }
+  });
 
 router.post('/', upload.single('image'), eventController.createEvent);
 
