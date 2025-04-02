@@ -1,4 +1,6 @@
 const Event = require('../models/event.model');
+const path = require('path');
+const fs = require('fs');
 
 const eventController = {
   // Get all events
@@ -20,138 +22,88 @@ const eventController = {
     }
   },
 
+  // Create new event
   createEvent: async (req, res) => {
     try {
-      const { 
-        eventName, 
-        eventDescription, 
-        eventDate, 
-        eventTime, 
-        venue, 
-        totalTickets, 
-        ticketTypes, 
-        image,
-        status 
-      } = req.body;
-  
-      // Validate required fields
-      if (!eventName || !eventDate || !eventTime || !venue || !totalTickets || !image) {
-        return res.status(400).json({
-          status: 'error',
-          message: 'eventName, eventDate, eventTime, venue, totalTickets, and image are required fields'
-        });
+      // Check if file was uploaded
+      if (!req.file) {
+        return res.status(400).json({ error: "Event image is required" });
       }
   
-      // Validate date format
-      if (isNaN(new Date(eventDate))) {
-        return res.status(400).json({
-          status: 'error',
-          message: 'Invalid date format'
-        });
+      // Prepare event data
+      const eventData = {
+        eventName: req.body.eventName,
+        eventDescription: req.body.eventDescription,
+        eventDate: req.body.eventDate,
+        eventTime: req.body.eventTime,
+        venue: req.body.venue,
+        totalTickets: req.body.totalTickets,
+        status: req.body.status || "Upcoming",
+        image: `/images/${req.file.filename}`, // This is the path that will be saved in DB
+      };
+  
+      // Handle ticket types
+      if (req.body.ticketTypes && typeof req.body.ticketTypes === 'string') {
+        eventData.ticketTypes = JSON.parse(req.body.ticketTypes);
+      } else if (req.body.ticketTypes) {
+        eventData.ticketTypes = req.body.ticketTypes;
       }
   
-      // Validate ticket types if provided
-      if (ticketTypes && Array.isArray(ticketTypes)) {
-        for (const ticketType of ticketTypes) {
-          if (!ticketType.type || !ticketType.price) {
-            return res.status(400).json({
-              status: 'error',
-              message: 'Each ticket type must have both type and price fields'
-            });
-          }
-          if (isNaN(ticketType.price)) {
-            return res.status(400).json({
-              status: 'error',
-              message: 'Ticket price must be a number'
-            });
-          }
-        }
-      }
-  
-      // Create new event
-      const newEvent = new Event({
-        eventName,
-        eventDescription: eventDescription || '',
-        eventDate: new Date(eventDate),
-        eventTime,
-        venue,
-        totalTickets: Number(totalTickets),
-        ticketTypes: ticketTypes || [],
-        image,
-        status: status || 'Upcoming'
-      });
-  
-      // Save to database
+      // Create and save the event
+      const newEvent = new Event(eventData);
       const savedEvent = await newEvent.save();
   
-      res.status(201).json({
-        status: 'success',
-        data: savedEvent,
-        message: 'Event created successfully'
-      });
-  
+      res.status(201).json(savedEvent);
     } catch (err) {
-      console.error('Error creating event:', err);
-      
-      // Handle duplicate key errors
-      if (err.code === 11000) {
-        return res.status(400).json({
-          status: 'error',
-          message: 'Event with this name already exists'
+      // Delete the uploaded file if error occurs
+      if (req.file) {
+        fs.unlink(path.join(__dirname, '../public', req.file.path), (err) => {
+          if (err) console.error('Error deleting uploaded file:', err);
         });
       }
-  
-      // Handle validation errors
-      if (err.name === 'ValidationError') {
-        const errors = Object.values(err.errors).map(el => el.message);
-        return res.status(400).json({
-          status: 'error',
-          message: 'Validation failed',
-          errors
-        });
-      }
-  
-      res.status(500).json({
-        status: 'error',
-        message: 'Failed to create event',
-        error: process.env.NODE_ENV === 'development' ? err.message : undefined
-      });
+      res.status(500).json({ error: err.message });
     }
   },
 
   // Get single event
-  getEvent: async (req, res) => {
-    try {
-      const event = await Event.findById(req.params.id);
-      
-      if (!event) {
-        return res.status(404).json({ 
-          status: 'error', 
-          message: 'Event not found' 
-        });
-      }
-      
-      res.status(200).json({ 
-        status: 'success', 
-        data: event 
-      });
-    } catch (err) {
-      console.error('Error fetching event:', err);
-      
-      if (err.name === 'CastError') {
-        return res.status(400).json({
-          status: 'error',
-          message: 'Invalid event ID format'
-        });
-      }
-      
-      res.status(500).json({ 
+getEvent: async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id);
+    
+    if (!event) {
+      return res.status(404).json({ 
         status: 'error', 
-        message: 'Failed to fetch event',
-        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        message: 'Event not found' 
       });
     }
-  },
+
+    // Create a proper image URL
+    const eventWithFullImageUrl = {
+      ...event._doc,
+      image: event.image ? `${req.protocol}://${req.get('host')}${event.image}` : null
+    };
+    
+    res.status(200).json({ 
+      status: 'success', 
+      data: eventWithFullImageUrl 
+    });
+  } catch (err) {
+    console.error('Error fetching event:', err);
+    
+    if (err.name === 'CastError') {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid event ID format'
+      });
+    }
+    
+    res.status(500).json({ 
+      status: 'error', 
+      message: 'Failed to fetch event',
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+},
 
   // Update event
   updateEvent: async (req, res) => {

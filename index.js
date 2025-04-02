@@ -6,7 +6,7 @@ const cors = require('cors');
 const path = require('path');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const multer = require('multer');
+const fs = require('fs');
 
 // Routes
 const eventRoutes = require('./routes/event.route');
@@ -17,6 +17,12 @@ const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/admin-portal';
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
+// Create public/images directory if it doesn't exist
+const uploadDir = path.join(__dirname, 'public', 'images');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 // Middleware
 app.use(helmet());
 app.use(morgan('dev'));
@@ -24,23 +30,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors({ origin: CLIENT_URL }));
 
-// File upload configuration
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB
-  },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed!'), false);
-    }
-  }
-});
+// Serve static files from public directory
+app.use('/public', express.static(path.join(__dirname, 'public')));
 
-// API routes with upload middleware
-app.use('/api/events', upload.single('image'), eventRoutes);
+// API routes
+app.use('/api/events', eventRoutes);
 app.use('/api/admins', adminRoutes);
 
 // Health check

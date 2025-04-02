@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const eventController = require('../controllers/event.controller');
+const upload = require('../middleware/multer');
+
+router.post('/', upload.single('image'), eventController.createEvent);
 
 // GET /api/events - Get all events
 router.get('/', eventController.getAllEvents);
-
-// POST /api/events - Create new event
-router.post('/', eventController.createEvent);
 
 // GET /api/events/:id - Get single event
 router.get('/:id', eventController.getEvent);
