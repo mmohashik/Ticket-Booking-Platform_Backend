@@ -7,6 +7,8 @@ const path = require('path');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const fs = require('fs'); // Only declare this once at the top
+// app.js or server.js
+const venueRoutes = require('./routes/venue.route');
 
 // Environment variables
 const PORT = process.env.PORT || 3000;
@@ -47,6 +49,8 @@ const adminRoutes = require('./routes/admin.route');
 
 app.use('/api/events', eventRoutes);
 app.use('/api/admins', adminRoutes);
+app.use('/api/venues', venueRoutes);
+
 
 // Health check
 app.get('/api/health', (req, res) => {
