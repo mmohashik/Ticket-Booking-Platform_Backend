@@ -3,6 +3,7 @@ const Event = require('../models/event.model');
 
 
 const venueController = {
+  
   // Get all venues
   getAllVenues: async (req, res) => {
     try {
@@ -275,7 +276,100 @@ const venueController = {
         error: process.env.NODE_ENV === 'development' ? err.message : undefined
       });
     }
-  }
+  },
+
+  generateSVGPreview: async (req, res) => {
+    try {
+      const { rows, cols, aisleAfterCol, categories, unavailableSeats = [] } = req.body;
+  
+      // Validate input
+      if (!rows || !cols || !categories) {
+        return res.status(400).json({ error: 'Missing required parameters' });
+      }
+  
+      // Generate SVG with aisle separation
+      const seatWidth = 30;
+      const seatHeight = 30;
+      const spacing = 5;
+      const stageHeight = 40;
+      const aisleWidth = 40;
+      
+      const svgWidth = cols * (seatWidth + spacing) + (aisleAfterCol ? aisleWidth : 0);
+      const svgHeight = rows * (seatHeight + spacing) + stageHeight + 20;
+      
+      let svg = `<svg width="${svgWidth}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${svgHeight}">`;
+      
+      // Add stage
+      svg += `<rect x="${(svgWidth - cols * seatWidth) / 2}" y="10" width="${cols * seatWidth}" height="${stageHeight}" fill="#333" rx="3" />`;
+      svg += `<text x="${svgWidth / 2}" y="${stageHeight/2 + 15}" text-anchor="middle" fill="white" font-size="14" font-weight="bold">STAGE</text>`;
+      
+      // Calculate row distribution (VVIP near stage)
+      let rowDistribution = [];
+      let currentRow = 0;
+      const reversedCategories = [...categories].reverse();
+      
+      for (const category of reversedCategories) {
+        for (let i = 0; i < category.rowCount && currentRow < rows; i++) {
+          rowDistribution[currentRow] = category.name;
+          currentRow++;
+        }
+      }
+      
+      // Generate seats
+      for (let row = 0; row < rows; row++) {
+        const rowLabel = String.fromCharCode(65 + row);
+        const category = categories.find(c => c.name === rowDistribution[row]);
+        
+        for (let col = 0; col < cols; col++) {
+          const seatNumber = col + 1;
+          const seatId = `${rowLabel}${seatNumber}`;
+          const isUnavailable = unavailableSeats.includes(seatId);
+          
+          // Position with aisle
+          let x = col * (seatWidth + spacing);
+          if (aisleAfterCol && col >= aisleAfterCol) {
+            x += aisleWidth;
+          }
+          
+          const y = (row * (seatHeight + spacing)) + stageHeight + 20;
+          
+          // Seat element
+          svg += `<g class="seat-group" data-seat="${seatId}">
+            <rect x="${x}" y="${y}" width="${seatWidth}" height="${seatHeight}" 
+              rx="3" fill="${isUnavailable ? '#f44336' : (category?.color || '#cccccc')}" 
+              stroke="#333" class="seat ${isUnavailable ? 'unavailable' : 'available'}"
+              data-category="${category?.name || 'General'}"
+              onmouseover="showSeatInfo('${seatId}', '${category?.name || 'General'}')"
+              onmouseout="hideSeatInfo()" />
+            <text x="${x + seatWidth/2}" y="${y + seatHeight/2 + 5}" 
+              text-anchor="middle" font-size="10" fill="#333" dominant-baseline="middle">
+              ${seatNumber}
+            </text>
+          </g>`;
+        }
+      }
+      
+      // Add interactivity functions
+      svg += `
+      <script>
+        function showSeatInfo(seatId, category) {
+          console.log('Hovered seat:', seatId, 'Category:', category);
+        }
+        function hideSeatInfo() {
+          console.log('Mouse left seat');
+        }
+      </script>
+      `;
+      
+      svg += `</svg>`;
+      
+      res.json({ svg });
+      
+    } catch (error) {
+      console.error('Error generating SVG preview:', error);
+      res.status(500).json({ error: 'Failed to generate preview' });
+    }
+  },
 };
 
 // Helper function to generate SVG (same as before)
