@@ -146,7 +146,7 @@ const venueController = {
       
       // Map venue categories with event pricing
       const categoriesWithPricing = venue.seatMap.categories.map(cat => {
-        const eventCategory = event.ticketTypes.find(ec => ec.name === cat.name);
+        const eventCategory = event.ticketTypes.find(ec => ec.type === cat.name);
         return {
           ...cat.toObject(),
           price: eventCategory ? eventCategory.price : 0
