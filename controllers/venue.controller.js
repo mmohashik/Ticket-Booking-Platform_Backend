@@ -29,7 +29,6 @@ const venueController = {
     try {
       const { name, description, layoutType, rows, cols, aisleAfterCol, categories } = req.body;
       
-      // Validate required fields
       if (!name || !rows || !cols) {
         return res.status(400).json({ 
           status: 'error',
@@ -37,10 +36,12 @@ const venueController = {
         });
       }
       
-      // Validate categories
+      const parsedRows = parseInt(rows, 10);
+      const parsedCols = parseInt(cols, 10);
+
       if (categories) {
-        const totalCategoryRows = categories.reduce((sum, cat) => sum + (cat.rowCount || 0), 0);
-        if (totalCategoryRows > rows) {
+        const totalCategoryRows = categories.reduce((sum, cat) => sum + (parseInt(cat.rowCount, 10) || 0), 0);
+        if (totalCategoryRows > parsedRows) {
           return res.status(400).json({ 
             status: 'error',
             message: 'Total category rows exceed venue rows'
@@ -48,33 +49,32 @@ const venueController = {
         }
       }
       
-      const unavailableSeats = req.body.unavailableSeats || [];
-      const totalSeats = rows * cols;
+      const unavailableSeats = req.body.unavailableSeats || []; 
+      const totalSeats = parsedRows * parsedCols; 
       
-      // Generate SVG
-      const svgTemplate = generateSVG({
-        rows,
-        cols,
-        aisleAfterCol,
-        categories: categories || [],
-        unavailableSeats
-      });
-      
-      const venue = new Venue({
+      const venueData = {
         name,
         description,
         layoutType,
         totalSeats,
         seatMap: {
-          rows,
-          cols,
-          aisleAfterCol,
+          rows: parsedRows,
+          cols: parsedCols,
+          aisleAfterCol: aisleAfterCol ? parseInt(aisleAfterCol, 10) : undefined,
           categories: categories || [],
           unavailableSeats
-        },
-        svgTemplate
+        }
+      };
+      
+      venueData.svgTemplate = generateSVG({
+        rows: venueData.seatMap.rows,
+        cols: venueData.seatMap.cols,
+        aisleAfterCol: venueData.seatMap.aisleAfterCol,
+        categories: venueData.seatMap.categories,
+        unavailableSeats: venueData.seatMap.unavailableSeats,
       });
       
+      const venue = new Venue(venueData);
       await venue.save();
       
       res.status(201).json({
@@ -125,18 +125,18 @@ const venueController = {
     }
   },
 
-  // Get venue with pricing from event
+  // Get venue with pricing from event (for seat map display)
   getVenueWithPricing: async (req, res) => {
     try {
       const venue = await Venue.findById(req.params.venueId);
-      if (!venue) {
+      if (!venue || !venue.seatMap) {
         return res.status(404).json({ 
           status: 'error',
-          message: 'Venue not found' 
+          message: 'Venue not found or has no seat map' 
         });
       }
       
-      const event = await Event.findById(req.params.eventId);
+      const event = await Event.findById(req.params.eventId); // No need to populate event.seats here explicitly
       if (!event) {
         return res.status(404).json({ 
           status: 'error',
@@ -144,26 +144,46 @@ const venueController = {
         });
       }
       
-      // Map venue categories with event pricing
       const categoriesWithPricing = venue.seatMap.categories.map(cat => {
-        const eventCategory = event.ticketTypes.find(ec => ec.type === cat.name);
+        const eventTicketType = event.ticketTypes.find(tt => tt.type === cat.name);
         return {
-          ...cat.toObject(),
-          price: eventCategory ? eventCategory.price : 0
+          ...cat.toObject(), 
+          price: eventTicketType ? eventTicketType.price : 0 
         };
       });
       
-      const venueWithPricing = {
-        ...venue.toObject(),
-        seatMap: {
-          ...venue.seatMap,
-          categories: categoriesWithPricing
-        }
+      const bookedSeatIds = event.seats.filter(s => s.isBooked).map(s => s.id);
+
+      const eventSpecificSvg = generateSVG({
+        rows: venue.seatMap.rows,
+        cols: venue.seatMap.cols,
+        aisleAfterCol: venue.seatMap.aisleAfterCol,
+        categories: categoriesWithPricing, 
+        unavailableSeats: venue.seatMap.unavailableSeats || [], 
+        eventBookedSeats: bookedSeatIds 
+      });
+      
+      const responseData = {
+        _id: venue._id,
+        name: venue.name,
+        description: venue.description,
+        layoutType: venue.layoutType,
+        totalSeats: venue.totalSeats, 
+        seatMap: { 
+          rows: venue.seatMap.rows,
+          cols: venue.seatMap.cols,
+          aisleAfterCol: venue.seatMap.aisleAfterCol,
+          categories: categoriesWithPricing, 
+          unavailableSeats: venue.seatMap.unavailableSeats || []
+        },
+        svgTemplate: eventSpecificSvg, 
+        createdAt: venue.createdAt,
+        updatedAt: venue.updatedAt,
       };
       
       res.status(200).json({
         status: 'success',
-        data: venueWithPricing
+        data: responseData
       });
     } catch (err) {
       console.error('Error fetching venue with pricing:', err);
@@ -171,13 +191,13 @@ const venueController = {
       if (err.name === 'CastError') {
         return res.status(400).json({
           status: 'error',
-          message: 'Invalid ID format'
+          message: 'Invalid ID format for venue or event'
         });
       }
       
       res.status(500).json({ 
         status: 'error', 
-        message: 'Failed to fetch venue with pricing',
+        message: 'Failed to fetch venue with pricing details',
         error: process.env.NODE_ENV === 'development' ? err.message : undefined
       });
     }
@@ -186,7 +206,7 @@ const venueController = {
   // Update venue
   updateVenue: async (req, res) => {
     try {
-      const { unavailableSeats, name, description, layoutType } = req.body;
+      const { name, description, layoutType, rows, cols, aisleAfterCol, categories, unavailableSeats } = req.body;
       
       const venue = await Venue.findById(req.params.id);
       if (!venue) {
@@ -196,24 +216,48 @@ const venueController = {
         });
       }
       
-      // Update basic fields if provided
+      let layoutChanged = false;
       if (name) venue.name = name;
       if (description) venue.description = description;
       if (layoutType) venue.layoutType = layoutType;
+
+      const parsedRows = rows ? parseInt(rows, 10) : venue.seatMap.rows;
+      const parsedCols = cols ? parseInt(cols, 10) : venue.seatMap.cols;
+      const parsedAisleAfterCol = aisleAfterCol ? parseInt(aisleAfterCol, 10) : venue.seatMap.aisleAfterCol;
+
+      if (rows && venue.seatMap.rows !== parsedRows) { venue.seatMap.rows = parsedRows; layoutChanged = true; }
+      if (cols && venue.seatMap.cols !== parsedCols) { venue.seatMap.cols = parsedCols; layoutChanged = true; }
+      if (aisleAfterCol && venue.seatMap.aisleAfterCol !== parsedAisleAfterCol) { venue.seatMap.aisleAfterCol = parsedAisleAfterCol; layoutChanged = true; }
       
-      // Update unavailable seats if provided
-      if (unavailableSeats) {
-        venue.seatMap.unavailableSeats = unavailableSeats;
+      if (categories) { 
+        venue.seatMap.categories = categories.map(cat => ({
+            ...cat,
+            rowCount: parseInt(cat.rowCount, 10) || 0
+        }));
+        layoutChanged = true; 
       }
-      
-      // Regenerate SVG with updated data
-      venue.svgTemplate = generateSVG({
-        rows: venue.seatMap.rows,
-        cols: venue.seatMap.cols,
-        aisleAfterCol: venue.seatMap.aisleAfterCol,
-        categories: venue.seatMap.categories,
-        unavailableSeats: venue.seatMap.unavailableSeats
-      });
+      if (unavailableSeats) { venue.seatMap.unavailableSeats = unavailableSeats; layoutChanged = true; }
+
+
+      if (layoutChanged) {
+         if (venue.seatMap.categories) { 
+            const totalCategoryRows = venue.seatMap.categories.reduce((sum, cat) => sum + (cat.rowCount || 0), 0);
+            if (totalCategoryRows > venue.seatMap.rows) {
+              return res.status(400).json({ 
+                status: 'error',
+                message: 'Total category rows exceed venue rows'
+              });
+            }
+          }
+        venue.totalSeats = venue.seatMap.rows * venue.seatMap.cols;
+        venue.svgTemplate = generateSVG({ 
+          rows: venue.seatMap.rows,
+          cols: venue.seatMap.cols,
+          aisleAfterCol: venue.seatMap.aisleAfterCol,
+          categories: venue.seatMap.categories,
+          unavailableSeats: venue.seatMap.unavailableSeats || []
+        });
+      }
       
       venue.updatedAt = new Date();
       await venue.save();
@@ -255,7 +299,7 @@ const venueController = {
       res.status(200).json({
         status: 'success',
         message: 'Venue deleted successfully',
-        data: {
+        data: { 
           id: deletedVenue._id,
           name: deletedVenue.name
         }
@@ -278,236 +322,112 @@ const venueController = {
     }
   },
 
+  // For admin panel preview when defining a venue
   generateSVGPreview: async (req, res) => {
     try {
       const { rows, cols, aisleAfterCol, categories, unavailableSeats = [] } = req.body;
   
-      // Validate input
       if (!rows || !cols || !categories) {
-        return res.status(400).json({ error: 'Missing required parameters' });
+        return res.status(400).json({ error: 'Missing required parameters for SVG preview' });
       }
   
-      // Generate SVG with aisle separation
-      const seatWidth = 30;
-      const seatHeight = 30;
-      const spacing = 5;
-      const stageHeight = 40;
-      const aisleWidth = 40;
+      const svg = generateSVG({
+        rows: parseInt(rows, 10),
+        cols: parseInt(cols, 10),
+        aisleAfterCol: aisleAfterCol ? parseInt(aisleAfterCol, 10) : undefined,
+        categories: categories.map(cat => ({...cat, rowCount: parseInt(cat.rowCount, 10) || 0})),
+        unavailableSeats,
+      });
       
-      const svgWidth = cols * (seatWidth + spacing) + (aisleAfterCol ? aisleWidth : 0);
-      const svgHeight = rows * (seatHeight + spacing) + stageHeight + 20;
-      
-      let svg = `<svg width="${svgWidth}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${svgHeight}">`;
-      
-      // Add stage
-      svg += `<rect x="${(svgWidth - cols * seatWidth) / 2}" y="10" width="${cols * seatWidth}" height="${stageHeight}" fill="#333" rx="3" />`;
-      svg += `<text x="${svgWidth / 2}" y="${stageHeight/2 + 15}" text-anchor="middle" fill="white" font-size="14" font-weight="bold">STAGE</text>`;
-      
-      // Calculate row distribution (VVIP near stage)
-      let rowDistribution = [];
-      let currentRow = 0;
-      const reversedCategories = [...categories].reverse();
-      
-      for (const category of reversedCategories) {
-        for (let i = 0; i < category.rowCount && currentRow < rows; i++) {
-          rowDistribution[currentRow] = category.name;
-          currentRow++;
-        }
-      }
-      
-      // Generate seats
-      for (let row = 0; row < rows; row++) {
-        const rowLabel = String.fromCharCode(65 + row);
-        const category = categories.find(c => c.name === rowDistribution[row]);
-        
-        for (let col = 0; col < cols; col++) {
-          const seatNumber = col + 1;
-          const seatId = `${rowLabel}${seatNumber}`;
-          const isUnavailable = unavailableSeats.includes(seatId);
-          
-          // Position with aisle
-          let x = col * (seatWidth + spacing);
-          if (aisleAfterCol && col >= aisleAfterCol) {
-            x += aisleWidth;
-          }
-          
-          const y = (row * (seatHeight + spacing)) + stageHeight + 20;
-          
-          // Seat element
-          svg += `<g class="seat-group" data-seat="${seatId}">
-            <rect x="${x}" y="${y}" width="${seatWidth}" height="${seatHeight}" 
-              rx="3" fill="${isUnavailable ? '#f44336' : (category?.color || '#cccccc')}" 
-              stroke="#333" class="seat ${isUnavailable ? 'unavailable' : 'available'}"
-              data-category="${category?.name || 'General'}"
-              onmouseover="showSeatInfo('${seatId}', '${category?.name || 'General'}')"
-              onmouseout="hideSeatInfo()" />
-            <text x="${x + seatWidth/2}" y="${y + seatHeight/2 + 5}" 
-              text-anchor="middle" font-size="10" fill="#333" dominant-baseline="middle">
-              ${seatNumber}
-            </text>
-          </g>`;
-        }
-      }
-      
-      // Add interactivity functions
-      svg += `
-      <script>
-        function showSeatInfo(seatId, category) {
-          console.log('Hovered seat:', seatId, 'Category:', category);
-        }
-        function hideSeatInfo() {
-          console.log('Mouse left seat');
-        }
-      </script>
-      `;
-      
-      svg += `</svg>`;
-      
-      res.json({ svg });
+      res.json({ svg }); 
       
     } catch (error) {
       console.error('Error generating SVG preview:', error);
-      res.status(500).json({ error: 'Failed to generate preview' });
+      res.status(500).json({ error: 'Failed to generate SVG preview' });
     }
   },
 };
 
-// Helper function to generate SVG (same as before)
-function generateSVG({ rows, cols, aisleAfterCol, categories, unavailableSeats = [] }) {
+// Helper function to generate SVG
+function generateSVG({ rows, cols, aisleAfterCol, categories, unavailableSeats = [], eventBookedSeats = [] }) {
   const seatWidth = 30;
   const seatHeight = 30;
-  const spacing = 5;
+  const spacing = 5; 
+  const aisleTrueWidth = 40; 
   const stageHeight = 40;
-  const aisleWidth = 40;
+  const stagePadding = 10; 
+  const topOffset = stageHeight + stagePadding + 20; 
+
+  let effectiveAisleWidth = 0;
+  if (aisleAfterCol && cols > aisleAfterCol) {
+      effectiveAisleWidth = aisleTrueWidth - spacing; 
+  }
+  const svgWidth = (cols * (seatWidth + spacing)) - spacing + effectiveAisleWidth;
+  const svgHeight = topOffset + (rows * (seatHeight + spacing)) - spacing;
+
+  let svg = `<svg width="${svgWidth}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${svgHeight}">`;
   
-  // Calculate total SVG dimensions
-  const svgWidth = cols * (seatWidth + spacing) + aisleWidth;
-  const svgHeight = rows * (seatHeight + spacing) + stageHeight + 20;
+  const stageRectWidth = (cols * (seatWidth + spacing)) - spacing; 
+  svg += `<rect x="${(svgWidth - stageRectWidth) / 2}" y="${stagePadding}" width="${stageRectWidth}" height="${stageHeight}" fill="#333" rx="3" />`;
+  svg += `<text x="${svgWidth / 2}" y="${stagePadding + stageHeight / 2}" text-anchor="middle" fill="white" font-size="14" font-weight="bold" dominant-baseline="middle">STAGE</text>`;
   
-  let svg = `<svg width="${svgWidth}" 
-                height="${svgHeight}" 
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 ${svgWidth} ${svgHeight}">`;
-  
-  // Add stage/performance area
-  svg += `<rect x="${(svgWidth - cols * seatWidth) / 2}" y="10" 
-          width="${cols * seatWidth}" height="${stageHeight}" 
-          fill="#333" rx="3" />`;
-  svg += `<text x="${svgWidth / 2}" y="${stageHeight/2 + 15}" 
-          text-anchor="middle" fill="white" font-size="14" font-weight="bold">STAGE</text>`;
-  
-  // Calculate category row distribution
   let rowDistribution = [];
-  let currentRow = 0;
-  
-  // Start with VVIP near the stage
-  const reversedCategories = [...categories].reverse();
+  let currentDistributedRow = 0;
+  const safeCategories = Array.isArray(categories) ? categories : [];
+  const reversedCategories = [...safeCategories].reverse(); 
   
   for (const category of reversedCategories) {
-    for (let i = 0; i < category.rowCount; i++) {
-      if (currentRow < rows) {
-        rowDistribution[currentRow] = category.name;
-        currentRow++;
-      }
+    const catRowCount = parseInt(category.rowCount, 10) || 0;
+    for (let i = 0; i < catRowCount && currentDistributedRow < rows; i++) {
+      rowDistribution[currentDistributedRow] = category.name;
+      currentDistributedRow++;
     }
   }
-  
-  // Fill remaining rows with General if any
-  while (currentRow < rows) {
-    rowDistribution[currentRow] = 'General';
-    currentRow++;
+  while (currentDistributedRow < rows) {
+    const generalCat = safeCategories.find(c => c.name && c.name.toLowerCase() === 'general');
+    rowDistribution[currentDistributedRow] = generalCat ? generalCat.name : 'Unknown'; 
+    currentDistributedRow++;
   }
   
-  // Generate seats
-  for (let row = 0; row < rows; row++) {
-    const rowLabel = String.fromCharCode(65 + row);
-    const category = categories.find(c => c.name === rowDistribution[row]);
+  for (let r = 0; r < rows; r++) {
+    const rowLabel = String.fromCharCode(65 + r); 
+    const categoryForThisRowName = rowDistribution[r];
+    const categoryForThisRow = safeCategories.find(c => c.name === categoryForThisRowName);
     
-    for (let col = 0; col < cols; col++) {
-      const seatNumber = col + 1;
+    for (let c = 0; c < cols; c++) {
+      const seatNumber = c + 1; 
       const seatId = `${rowLabel}${seatNumber}`;
-      const isUnavailable = unavailableSeats.includes(seatId);
       
-      // Position calculation with aisle
-      let x = col * (seatWidth + spacing);
-      if (aisleAfterCol && col >= aisleAfterCol) {
-        x += aisleWidth;
+      const isStaticallyUnavailable = unavailableSeats.includes(seatId);
+      const isEventBooked = eventBookedSeats.includes(seatId);
+      const isActuallyUnavailable = isStaticallyUnavailable || isEventBooked;
+      
+      let x = c * (seatWidth + spacing);
+      if (aisleAfterCol && c >= aisleAfterCol) { 
+        x += effectiveAisleWidth;
       }
+      const y = topOffset + r * (seatHeight + spacing);
       
-      const y = (row * (seatHeight + spacing)) + stageHeight + 20;
+      const seatFillColor = isActuallyUnavailable 
+        ? '#757575' 
+        : (categoryForThisRow ? categoryForThisRow.color : '#cccccc'); 
       
-      // Seat element with hover and click events
       svg += `<g class="seat-group" data-seat="${seatId}">
-        <rect x="${x}" y="${y}" 
-          width="${seatWidth}" height="${seatHeight}" 
-          rx="3" fill="${isUnavailable ? '#f44336' : (category ? category.color : '#cccccc')}" 
-          stroke="#333" stroke-width="1"
-          class="seat ${isUnavailable ? 'unavailable' : 'available'}"
-          data-category="${category ? category.name : 'General'}"
-          data-row="${rowLabel}"
-          data-col="${seatNumber}"
-          onmouseover="showSeatInfo('${seatId}', '${category ? category.name : 'General'}')"
-          onmouseout="hideSeatInfo()" />
-        <text x="${x + seatWidth/2}" y="${y + seatHeight/2 + 5}" 
-          text-anchor="middle" font-size="10" fill="#333" 
+        <rect x="${x}" y="${y}" width="${seatWidth}" height="${seatHeight}" rx="3" 
+          fill="${seatFillColor}" stroke="#333" stroke-width="1"
+          class="seat ${isActuallyUnavailable ? 'unavailable' : 'available'}"
+          data-category="${categoryForThisRow ? categoryForThisRow.name : 'Unknown'}"
+          data-row="${rowLabel}" data-col="${seatNumber}" />
+        <text x="${x + seatWidth / 2}" y="${y + seatHeight / 2 + 1}" 
+          text-anchor="middle" font-size="10" fill="${isActuallyUnavailable ? '#fff' : '#333'}" 
           dominant-baseline="middle">${seatNumber}</text>
       </g>`;
     }
   }
   
-  // Add row labels
-  for (let row = 0; row < rows; row++) {
-    const rowLabel = String.fromCharCode(65 + row);
-    const y = (row * (seatHeight + spacing)) + stageHeight + 20 + seatHeight/2 + 5;
-    
-    svg += `<text x="10" y="${y}" 
-            text-anchor="end" font-size="10" fill="#333" 
-            dominant-baseline="middle">${rowLabel}</text>`;
-  }
-  
-  // Add aisle if specified
-  if (aisleAfterCol) {
-    const aisleX = aisleAfterCol * (seatWidth + spacing) + seatWidth/2;
-    svg += `<path d="M${aisleX} ${stageHeight + 20} V${svgHeight - 10}" 
-            stroke="#666" stroke-width="2" stroke-dasharray="5,5" />`;
-    svg += `<text x="${aisleX + 10}" y="${stageHeight + 40}" 
-            font-size="12" fill="#666">AISLE</text>`;
-  }
-  
-  // Add seat info display area
-  svg += `<rect id="seat-info-box" x="10" y="10" width="200" height="60" 
-          fill="white" stroke="#333" rx="3" opacity="0" />
-        <text id="seat-info-text" x="20" y="30" font-size="12" fill="#333" opacity="0">
-          Seat: 
-          <tspan id="seat-info-id" font-weight="bold"></tspan>
-        </text>
-        <text id="seat-info-category" x="20" y="50" font-size="12" fill="#333" opacity="0">
-          Category: 
-          <tspan id="seat-info-cat-name" font-weight="bold"></tspan>
-        </text>`;
-  
-  // Add JavaScript for interactivity
   svg += `<script>
-    function showSeatInfo(seatId, category) {
-      const box = document.getElementById('seat-info-box');
-      const text = document.getElementById('seat-info-text');
-      const catText = document.getElementById('seat-info-category');
-      const seatIdText = document.getElementById('seat-info-id');
-      const catNameText = document.getElementById('seat-info-cat-name');
-      
-      seatIdText.textContent = seatId;
-      catNameText.textContent = category;
-      
-      box.setAttribute('opacity', '0.9');
-      text.setAttribute('opacity', '1');
-      catText.setAttribute('opacity', '1');
-    }
-    
-    function hideSeatInfo() {
-      document.getElementById('seat-info-box').setAttribute('opacity', '0');
-      document.getElementById('seat-info-text').setAttribute('opacity', '0');
-      document.getElementById('seat-info-category').setAttribute('opacity', '0');
-    }
+    function showSeatInfo(seatId, category) { /* For potential future use or admin preview */ }
+    function hideSeatInfo() { /* For potential future use or admin preview */ }
   </script>`;
   
   svg += `</svg>`;
