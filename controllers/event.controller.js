@@ -2,6 +2,7 @@ const Event = require('../models/event.model');
 const Booking = require('../models/booking.model');
 const Venue = require('../models/venue.model'); // Import Venue model
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const sendEmail = require('../utils/email');
 const path = require('path');
 const fs = require('fs');
 
@@ -387,6 +388,23 @@ const eventController = {
           ticketHolder: ticketHolderDetails,
           totalPaid: totalPrice
         });
+
+        // Send confirmation email
+        try {
+          const emailSubject = `Booking Confirmation for ${event.eventName}`;
+          const emailHtml = `
+            <h1>Booking Confirmed!</h1>
+            <p>Thank you for booking your tickets for ${event.eventName}.</p>
+            <p><strong>Event Date:</strong> ${new Date(event.eventDate).toLocaleDateString()}</p>
+            <p><strong>Seats:</strong> ${selectedSeats.join(', ')}</p>
+            <p><strong>Total Paid:</strong> $${totalPrice.toFixed(2)}</p>
+            <p>We look forward to seeing you there!</p>
+          `;
+          await sendEmail(ticketHolderDetails.email, emailSubject, emailHtml);
+        } catch (emailError) {
+          console.error('Failed to send confirmation email:', emailError);
+          // Note: Do not fail the booking if email sending fails. Log the error.
+        }
 
       } else if (paymentIntent.status === 'requires_action' || paymentIntent.status === 'requires_confirmation') {
         // This case should ideally not be hit frequently if allow_redirects is 'never'
