@@ -356,20 +356,23 @@ function generateSVG({ rows, cols, aisleAfterCol, categories, unavailableSeats =
   const aisleTrueWidth = 40; 
   const stageHeight = 40;
   const stagePadding = 10; 
+  const rowLabelWidth = 20; // Space for row labels (A, B, C...)
   const topOffset = stageHeight + stagePadding + 20; 
 
   let effectiveAisleWidth = 0;
   if (aisleAfterCol && cols > aisleAfterCol) {
       effectiveAisleWidth = aisleTrueWidth - spacing; 
   }
-  const svgWidth = (cols * (seatWidth + spacing)) - spacing + effectiveAisleWidth;
+  const baseSeatLayoutWidth = (cols * (seatWidth + spacing)) - spacing + effectiveAisleWidth;
+  const svgWidth = baseSeatLayoutWidth + rowLabelWidth;
   const svgHeight = topOffset + (rows * (seatHeight + spacing)) - spacing;
 
   let svg = `<svg width="${svgWidth}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${svgHeight}">`;
   
-  const stageRectWidth = (cols * (seatWidth + spacing)) - spacing; 
-  svg += `<rect x="${(svgWidth - stageRectWidth) / 2}" y="${stagePadding}" width="${stageRectWidth}" height="${stageHeight}" fill="#333" rx="3" />`;
-  svg += `<text x="${svgWidth / 2}" y="${stagePadding + stageHeight / 2}" text-anchor="middle" fill="white" font-size="14" font-weight="bold" dominant-baseline="middle">STAGE</text>`;
+  // Adjust stage position to account for row labels
+  const stageRectWidth = baseSeatLayoutWidth; 
+  svg += `<rect x="${rowLabelWidth + (baseSeatLayoutWidth - stageRectWidth) / 2}" y="${stagePadding}" width="${stageRectWidth}" height="${stageHeight}" fill="#333" rx="3" />`;
+  svg += `<text x="${rowLabelWidth + baseSeatLayoutWidth / 2}" y="${stagePadding + stageHeight / 2}" text-anchor="middle" fill="white" font-size="14" font-weight="bold" dominant-baseline="middle">STAGE</text>`;
   
   let rowDistribution = [];
   let currentDistributedRow = 0;
@@ -394,6 +397,10 @@ function generateSVG({ rows, cols, aisleAfterCol, categories, unavailableSeats =
     const categoryForThisRowName = rowDistribution[r];
     const categoryForThisRow = safeCategories.find(c => c.name === categoryForThisRowName);
     
+    // Add row label text element
+    const rowLabelY = topOffset + r * (seatHeight + spacing) + seatHeight / 2;
+    svg += `<text x="${rowLabelWidth / 2}" y="${rowLabelY}" text-anchor="middle" font-size="12" fill="#333" dominant-baseline="middle">${rowLabel}</text>`;
+
     for (let c = 0; c < cols; c++) {
       const seatNumber = c + 1; 
       const seatId = `${rowLabel}${seatNumber}`;
@@ -402,7 +409,8 @@ function generateSVG({ rows, cols, aisleAfterCol, categories, unavailableSeats =
       const isEventBooked = eventBookedSeats.includes(seatId);
       const isActuallyUnavailable = isStaticallyUnavailable || isEventBooked;
       
-      let x = c * (seatWidth + spacing);
+      // Adjust seat x-coordinate for row labels
+      let x = rowLabelWidth + c * (seatWidth + spacing);
       if (aisleAfterCol && c >= aisleAfterCol) { 
         x += effectiveAisleWidth;
       }
