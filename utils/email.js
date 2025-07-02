@@ -1,27 +1,36 @@
 const nodemailer = require('nodemailer');
 
-const sendEmail = async (to, subject, html) => {
+/**
+ * Sends an email.
+ * @param {string} to Recipient's email address.
+ * @param {string} subject Email subject.
+ * @param {string} html HTML content of the email.
+ * @param {Array} attachments Array of attachment objects for Nodemailer (optional).
+ *                 Example: [{ filename: 'qr.png', content: buffer, cid: 'qr_code_image' }]
+ * @returns {Promise<object>} Nodemailer info object if successful.
+ * @throws {Error} If email sending fails.
+ */
+const sendEmail = async (to, subject, html, attachments = []) => {
   try {
-    // Create a transporter object using SMTP transport
-    // TODO: Replace with actual SMTP server details
     let transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com', // Replace with your SMTP server host
-      port: 587, // Replace with your SMTP server port
-      secure: false, // true for 465, false for other ports
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false, // true for 465, false for other ports (STARTTLS on 587)
       auth: {
-        user: 'mmohashik@gmail.com', // Replace with your SMTP username
-        pass: 'efva rcke nwwz xkdv' // Replace with your SMTP password
+        user: 'mmohashik@gmail.com', // Your Gmail address
+        pass: 'efva rcke nwwz xkdv'          // Your Gmail password or App Password
       }
     });
 
-    // Send mail with defined transport object
-    let info = await transporter.sendMail({
-      from: '"Ticket Booking Platform" <mmohashik@gmail.com>', // Replace with your sender address
+    let mailOptions = {
+      from: '"Ticket Booking Platform" <mmohashik@gmail.com>',
       to: to,
       subject: subject,
-      html: html
-    });
+      html: html,
+      attachments: attachments
+    };
 
+    let info = await transporter.sendMail(mailOptions);
     console.log('Message sent: %s', info.messageId);
     return info;
   } catch (error) {

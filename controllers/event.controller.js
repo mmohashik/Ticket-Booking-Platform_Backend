@@ -2,9 +2,10 @@ const Event = require('../models/event.model');
 const Booking = require('../models/booking.model');
 const Venue = require('../models/venue.model'); // Import Venue model
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const sendEmail = require('../utils/email');
 const path = require('path');
-const fs = require('fs');
+const sendEmail = require(path.resolve(__dirname, '../utils/email.js'));
+const fs = require('fs').promises; // Use promises version of fs
+const { generateQrCodeBuffer } = require(path.resolve(__dirname, '../utils/qrCodeGenerator.js'));
 
 const eventController = {
   // Get all events
@@ -389,21 +390,54 @@ const eventController = {
           totalPaid: totalPrice
         });
 
-        // Send confirmation email
+        // Send confirmation email with QR code
         try {
-          const emailSubject = `Booking Confirmation for ${event.eventName}`;
-          const emailHtml = `
-            <h1>Booking Confirmed!</h1>
-            <p>Thank you for booking your tickets for ${event.eventName}.</p>
-            <p><strong>Event Date:</strong> ${new Date(event.eventDate).toLocaleDateString()}</p>
-            <p><strong>Seats:</strong> ${selectedSeats.join(', ')}</p>
-            <p><strong>Total Paid:</strong> $${totalPrice.toFixed(2)}</p>
-            <p>We look forward to seeing you there!</p>
-          `;
-          await sendEmail(ticketHolderDetails.email, emailSubject, emailHtml);
+          // 1. Gather all necessary data
+          const venue = await Venue.findById(event.venue);
+          const venueName = venue ? venue.name : 'N/A';
+          const formattedEventDate = new Date(event.eventDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+          const formattedTotalPrice = totalPrice.toFixed(2);
+          const currentYear = new Date().getFullYear();
+          const qrCodeText = `BookingID:${newBooking._id}|Event:${event.eventName}|User:${ticketHolderDetails.email}`; // Example text for QR
+
+          // 2. Generate QR code
+          const qrCodeBuffer = await generateQrCodeBuffer(qrCodeText);
+
+          // 3. Read HTML email template
+          const templatePath = path.resolve(__dirname, '../email_templates/ticket_template.html');
+          let htmlTemplate = await fs.readFile(templatePath, 'utf-8');
+
+          // 4. Replace placeholders
+          htmlTemplate = htmlTemplate
+            .replace(/{{eventName}}/g, event.eventName)
+            .replace(/{{eventDate}}/g, formattedEventDate)
+            .replace(/{{eventTime}}/g, event.eventTime || 'N/A') // Assuming event might not have a time
+            .replace(/{{venueName}}/g, venueName)
+            .replace(/{{ticketHolderName}}/g, ticketHolderDetails.name)
+            .replace(/{{ticketHolderEmail}}/g, ticketHolderDetails.email)
+            .replace(/{{bookingId}}/g, newBooking._id.toString())
+            .replace(/{{seats}}/g, selectedSeats.join(', '))
+            .replace(/{{totalPrice}}/g, formattedTotalPrice)
+            .replace(/{{currentYear}}/g, currentYear);
+            // Note: The QR code image is embedded using cid, so no placeholder for its src in the template content itself.
+
+          // 5. Prepare attachment for QR code
+          const attachments = [{
+            filename: 'qr_code.png',
+            content: qrCodeBuffer,
+            encoding: 'base64', // Not strictly necessary for buffer, but good practice
+            cid: 'qr_code_image' // This CID must match the one in <img src="cid:qr_code_image">
+          }];
+
+          // 6. Send email
+          const emailSubject = `Your Ticket for ${event.eventName} - Booking ID: ${newBooking._id}`;
+          await sendEmail(ticketHolderDetails.email, emailSubject, htmlTemplate, attachments);
+          console.log(`[createBooking] Confirmation email sent successfully to ${ticketHolderDetails.email} for booking ${newBooking._id}`);
+
         } catch (emailError) {
-          console.error('Failed to send confirmation email:', emailError);
-          // Note: Do not fail the booking if email sending fails. Log the error.
+          console.error(`[createBooking] CRITICAL: Failed to send confirmation email for booking ${newBooking._id}:`, emailError);
+          // Important: Do not let email failure roll back the booking or fail the request.
+          // Log it for monitoring and potential manual follow-up.
         }
 
       } else if (paymentIntent.status === 'requires_action' || paymentIntent.status === 'requires_confirmation') {
