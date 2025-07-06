@@ -24,11 +24,16 @@ router.get('/images/:filename', (req, res) => {
 // Event routes
 router.post('/', upload.single('image'), eventController.createEvent);
 router.get('/', eventController.getAllEvents);
+
+// Get all bookings route - MOVED UP
+router.get('/bookings', eventController.getAllBookings);
+
 router.get('/:id', eventController.getEvent);
 router.put('/:id', upload.single('image'), eventController.updateEvent);
 router.delete('/:id', eventController.deleteEvent);
 
 // Booking creation route (replaces old seat booking route)
 router.post('/create-booking', eventController.createBooking);
+
 
 module.exports = router;

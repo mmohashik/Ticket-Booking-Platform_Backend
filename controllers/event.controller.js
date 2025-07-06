@@ -11,23 +11,41 @@ const eventController = {
   // Get all events
   getAllEvents: async (req, res) => {
     try {
-      const events = await Event.find().sort({ createdAt: -1 });
+      // Populate venue name directly in the initial query
+      const events = await Event.find()
+        .sort({ createdAt: -1 })
+        .populate('venue', 'name') // Populate venue and select only its name
+        .lean();
 
-      const eventsWithFullImageUrls = events.map(event => ({
-        ...event._doc,
-        image: event.image ? `${req.protocol}://${req.get('host')}${event.image}` : null
+      const eventsWithDetails = await Promise.all(events.map(async (event) => {
+        const bookingsForEvent = await Booking.find({ eventId: event._id }).lean();
+        
+        let eventRevenue = 0;
+        let eventTicketsSold = 0;
+
+        bookingsForEvent.forEach(booking => {
+          eventRevenue += booking.totalAmount || 0;
+          eventTicketsSold += booking.seats ? booking.seats.length : 0;
+        });
+
+        return {
+          ...event,
+          image: event.image ? `${req.protocol}://${req.get('host')}${event.image}` : null,
+          eventRevenue,
+          eventTicketsSold,
+        };
       }));
 
       res.status(200).json({
         status: 'success',
-        data: eventsWithFullImageUrls,
-        count: events.length
+        data: eventsWithDetails,
+        count: eventsWithDetails.length
       });
     } catch (err) {
-      console.error('Error fetching events:', err);
+      console.error('Error fetching events with details:', err);
       res.status(500).json({
         status: 'error',
-        message: 'Failed to fetch events',
+        message: 'Failed to fetch events with details',
         error: process.env.NODE_ENV === 'development' ? err.message : undefined
       });
     }
@@ -466,6 +484,47 @@ const eventController = {
         // stripe.paymentIntents.cancel(paymentIntent.id).catch(cancelError => console.error("Failed to cancel PI after error:", cancelError));
       }
       res.status(500).json({ message: 'Booking creation failed.', error: error.message });
+    }
+  },
+
+  // Get all bookings
+  getAllBookings: async (req, res) => {
+    try {
+      console.log('[getAllBookings] Attempting to fetch and populate bookings.');
+      const bookings = await Booking.find().populate('eventId', 'eventName eventDate');
+      console.log(`[getAllBookings] Successfully fetched ${bookings ? bookings.length : 'null/undefined'} bookings.`);
+
+      if (bookings && bookings.length > 0 && bookings[0].eventId && typeof bookings[0].eventId === 'object' && !bookings[0].eventId.eventName) {
+        // Check if eventId is an object (populated) but lacks expected fields.
+        // ObjectId.prototype.eventName would be undefined, so this check is primarily for actual populated objects.
+        console.warn('[getAllBookings] Warning: eventId might not have been populated correctly for the first booking or eventName is missing:', bookings[0].eventId);
+      }
+
+      res.status(200).json({
+        status: 'success',
+        data: bookings,
+        count: bookings.length
+      });
+    } catch (err) {
+      console.error('-----------------------------------------------------');
+      console.error('[getAllBookings] CRITICAL ERROR in getAllBookings:', err);
+      console.error('Error Name:', err.name);
+      console.error('Error Message:', err.message);
+      console.error('Error Stack:', err.stack);
+      if (err.reason) console.error('Error Reason (Mongoose):', err.reason);
+      if (err.value) console.error('Error Value (Mongoose):', err.value);
+      if (err.path) console.error('Error Path (Mongoose):', err.path);
+      console.error('-----------------------------------------------------');
+
+      res.status(500).json({
+        status: 'error',
+        message: 'Failed to fetch bookings due to an internal server error.',
+        errorDetails: {
+          name: err.name,
+          message: err.message,
+        },
+        ...(process.env.NODE_ENV === 'development' && { fullErrorStack: err.stack })
+      });
     }
   }
 };
