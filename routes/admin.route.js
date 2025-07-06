@@ -5,7 +5,6 @@ const adminController = require('../controllers/admin.controller');
 // Admin CRUD routes
 router.get('/', adminController.getAllAdmins);
 router.post('/', adminController.createAdmin);
-router.get('/users/count', adminController.getTotalUsers); // New route for total users
 router.get('/:id', adminController.getAdmin);
 router.put('/:id', adminController.updateAdmin);
 router.delete('/:id', adminController.deleteAdmin);

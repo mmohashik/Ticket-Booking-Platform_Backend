@@ -11,8 +11,15 @@ const eventController = {
   // Get all events
   getAllEvents: async (req, res) => {
     try {
+      const { search } = req.query;
+      let query = {};
+
+      if (search) {
+        query.eventName = { $regex: search, $options: 'i' }; // Case-insensitive search
+      }
+
       // Populate venue name directly in the initial query
-      const events = await Event.find()
+      const events = await Event.find(query)
         .sort({ createdAt: -1 })
         .populate('venue', 'name') // Populate venue and select only its name
         .lean();
@@ -524,6 +531,207 @@ const eventController = {
           message: err.message,
         },
         ...(process.env.NODE_ENV === 'development' && { fullErrorStack: err.stack })
+      });
+    }
+  },
+
+  // Get event report
+  getEventReport: async (req, res) => {
+    try {
+      const eventId = req.params.id;
+      const event = await Event.findById(eventId).lean();
+
+      if (!event) {
+        return res.status(404).json({ message: 'Event not found' });
+      }
+
+      const venue = await Venue.findById(event.venue).lean();
+      if (!venue || !venue.seatMap || !venue.seatMap.categories) {
+        // If venue details are crucial for categorization, handle error.
+        // Alternatively, could proceed with a default categorization or skip categorization.
+        console.error(`Venue or seatMap not found for event ${eventId}, venueId ${event.venue}`);
+        return res.status(500).json({ message: 'Venue information for categorization is missing.' });
+      }
+
+      const bookings = await Booking.find({ eventId }).lean();
+
+      let totalRevenueCalculated = 0; // To sum up revenue based on per-seat calculation
+      let totalTicketsSold = 0;
+      const ticketSalesByCategory = {};
+      const uniqueAttendees = new Set();
+
+      // Create a price map for quick lookup: { "CategoryName": price }
+      const eventTicketPriceMap = {};
+      // const ticketSalesByCategory = {}; // THIS WAS THE ERRONEOUS SECOND DECLARATION - REMOVED
+
+      // Pre-initialize ticketSalesByCategory (which was declared earlier)
+      // with all event ticket types (normalized)
+      // and populate eventTicketPriceMap (with normalized keys)
+      if (event.ticketTypes && event.ticketTypes.length > 0) {
+        event.ticketTypes.forEach(tt => {
+          const normalizedEventType = tt.type.toLowerCase(); // Normalize to lowercase
+          eventTicketPriceMap[normalizedEventType] = tt.price;
+          if (!ticketSalesByCategory[tt.type]) { // Use original type name for display in report
+            ticketSalesByCategory[tt.type] = {
+              count: 0,
+              revenue: 0,
+            };
+          }
+        });
+      }
+
+      bookings.forEach(booking => {
+        totalTicketsSold += booking.seats.length;
+        uniqueAttendees.add(booking.ticketHolderEmail);
+
+        if (booking.seats.length === 1) {
+          // Single-seat booking: Use totalAmount to determine category
+          const amountPaid = booking.totalAmount;
+          let inferredCategoryName = null;
+          let highestMatchingPrice = -1;
+
+          // Find the event ticket type that matches the amount paid.
+          // If multiple types have the same price, this picks one.
+          // Sorting by price (e.g., descending) could make this more robust if needed for ambiguous cases.
+          if (event.ticketTypes && event.ticketTypes.length > 0) {
+            for (const tt of event.ticketTypes) {
+              if (tt.price === amountPaid) {
+                // Basic exact match. More sophisticated matching might be needed if prices can be sums.
+                // For single seat, direct price match is expected.
+                inferredCategoryName = tt.type; // Use original casing
+                break; 
+              }
+            }
+          }
+
+          if (inferredCategoryName && ticketSalesByCategory[inferredCategoryName]) {
+            ticketSalesByCategory[inferredCategoryName].count += 1;
+            ticketSalesByCategory[inferredCategoryName].revenue += amountPaid;
+            totalRevenueCalculated += amountPaid;
+          } else {
+            // Price did not match any event ticket type. Fallback to physical location based categorization.
+            console.warn(`Single seat booking: Price ${amountPaid} did not match any event ticket type for event '${event.eventName}', booking ID ${booking._id}. Using physical location for categorization.`);
+            
+            const seatId = booking.seats[0].seatId;
+            const rowLetter = seatId.charAt(0).toUpperCase();
+            const rowIndex = rowLetter.charCodeAt(0) - 'A'.charCodeAt(0);
+            let physicalSeatCategoryName = null;
+            let cumulativeRowCount = 0;
+
+            for (const venueCategory of venue.seatMap.categories) {
+              if (rowIndex < cumulativeRowCount + venueCategory.rowCount) {
+                physicalSeatCategoryName = venueCategory.name;
+                break;
+              }
+              cumulativeRowCount += venueCategory.rowCount;
+            }
+
+            if (physicalSeatCategoryName) {
+              const normalizedPhysicalSeatCategoryName = physicalSeatCategoryName.toLowerCase();
+              const priceFromMap = eventTicketPriceMap[normalizedPhysicalSeatCategoryName]; // Price from event's definition for this physical category
+              let reportCategoryName = physicalSeatCategoryName; // Default
+
+              if (event.ticketTypes && event.ticketTypes.length > 0) {
+                  const matchingEventType = event.ticketTypes.find(et => et.type.toLowerCase() === normalizedPhysicalSeatCategoryName);
+                  if (matchingEventType) {
+                      reportCategoryName = matchingEventType.type;
+                  }
+              }
+
+              if (priceFromMap !== undefined && ticketSalesByCategory[reportCategoryName]) {
+                ticketSalesByCategory[reportCategoryName].count += 1;
+                ticketSalesByCategory[reportCategoryName].revenue += priceFromMap;
+                totalRevenueCalculated += priceFromMap;
+              } else {
+                // Physical category identified, but it doesn't map to a priced event type or pre-initialized category
+                const fallbackKey = `UnpricedFallback (Seat ${seatId}, Physical ${physicalSeatCategoryName})`;
+                if (!ticketSalesByCategory[fallbackKey]) ticketSalesByCategory[fallbackKey] = { count: 0, revenue: 0 };
+                ticketSalesByCategory[fallbackKey].count += 1;
+              }
+            } else {
+              // Could not determine physical category for the seat
+              const unknownKey = `UnknownPhysical (Seat ${seatId})`;
+              if (!ticketSalesByCategory[unknownKey]) ticketSalesByCategory[unknownKey] = { count: 0, revenue: 0 };
+              ticketSalesByCategory[unknownKey].count += 1;
+            }
+          }
+        } else {
+          // Multi-seat booking: Use existing physical location logic for each seat
+          booking.seats.forEach(bookedSeat => {
+            const seatId = bookedSeat.seatId; // seatId is already available from bookedSeat.seatId
+            const rowLetter = seatId.charAt(0).toUpperCase();
+            const rowIndex = rowLetter.charCodeAt(0) - 'A'.charCodeAt(0);
+
+            let physicalSeatCategoryName = null; // Name from venue.seatMap.categories
+            let cumulativeRowCount = 0;
+
+            for (const venueCategory of venue.seatMap.categories) {
+              if (rowIndex < cumulativeRowCount + venueCategory.rowCount) {
+                physicalSeatCategoryName = venueCategory.name;
+                break;
+              }
+              cumulativeRowCount += venueCategory.rowCount;
+            }
+
+            if (physicalSeatCategoryName) {
+              const normalizedPhysicalSeatCategoryName = physicalSeatCategoryName.toLowerCase(); // Normalize for lookup
+              const price = eventTicketPriceMap[normalizedPhysicalSeatCategoryName];
+
+              let originalEventTypeNameForReport = null;
+              if (price !== undefined && event.ticketTypes && event.ticketTypes.length > 0) {
+                  const matchingEventType = event.ticketTypes.find(et => et.type.toLowerCase() === normalizedPhysicalSeatCategoryName);
+                  if (matchingEventType) {
+                      originalEventTypeNameForReport = matchingEventType.type; // This is the key used in ticketSalesByCategory
+                  }
+              }
+
+              if (price !== undefined && originalEventTypeNameForReport) {
+                if (ticketSalesByCategory[originalEventTypeNameForReport]) {
+                  ticketSalesByCategory[originalEventTypeNameForReport].count += 1;
+                  ticketSalesByCategory[originalEventTypeNameForReport].revenue += price;
+                  totalRevenueCalculated += price;
+                } else {
+                  console.error(`Logic error: Category ${originalEventTypeNameForReport} was expected in ticketSalesByCategory but not found. Seat: ${seatId}`);
+                }
+              } else if (physicalSeatCategoryName) {
+                console.warn(`Price not found or no original event type match for physical category '${physicalSeatCategoryName}' (normalized: '${normalizedPhysicalSeatCategoryName}') in event '${event.eventName}'. Seat: ${seatId}`);
+                const unpricedCategoryKey = `Unpriced (${physicalSeatCategoryName})`; 
+                if (!ticketSalesByCategory[unpricedCategoryKey]) {
+                  ticketSalesByCategory[unpricedCategoryKey] = { count: 0, revenue: 0 };
+                }
+                ticketSalesByCategory[unpricedCategoryKey].count += 1;
+              }
+            } else {
+              console.warn(`Physical category not found for seat ${seatId} (row index ${rowIndex}) in venue ${venue.name} for event '${event.eventName}'`);
+              const unknownCategoryKey = "Unknown Category (Venue Map)";
+              if (!ticketSalesByCategory[unknownCategoryKey]) {
+                ticketSalesByCategory[unknownCategoryKey] = { count: 0, revenue: 0 };
+              }
+              ticketSalesByCategory[unknownCategoryKey].count += 1;
+            }
+          });
+        }
+      });
+
+      const overallTotalRevenue = bookings.reduce((sum, b) => sum + b.totalAmount, 0);
+
+      res.status(200).json({
+        status: 'success',
+        data: {
+          eventName: event.eventName,
+          eventDate: event.eventDate,
+          totalRevenue: overallTotalRevenue,
+          totalTicketsSold,
+          numberOfUniqueAttendees: uniqueAttendees.size,
+          ticketSalesByCategory,
+        },
+      });
+    } catch (err) {
+      console.error('Error generating event report:', err);
+      res.status(500).json({
+        status: 'error',
+        message: 'Failed to generate event report',
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined,
       });
     }
   }

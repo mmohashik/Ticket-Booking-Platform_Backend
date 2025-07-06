@@ -32,6 +32,9 @@ router.get('/:id', eventController.getEvent);
 router.put('/:id', upload.single('image'), eventController.updateEvent);
 router.delete('/:id', eventController.deleteEvent);
 
+// Route to get event report
+router.get('/:id/report', eventController.getEventReport);
+
 // Booking creation route (replaces old seat booking route)
 router.post('/create-booking', eventController.createBooking);
 
