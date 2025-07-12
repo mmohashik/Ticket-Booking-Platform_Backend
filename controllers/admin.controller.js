@@ -1,4 +1,5 @@
 const Admin = require('../models/admin.model');
+const Booking = require('../models/booking.model');
 const bcrypt = require('bcryptjs');
 
 const adminController = {
@@ -171,6 +172,25 @@ const adminController = {
         message: 'Failed to update password' 
       });
     }
+  },
+
+  // Get total unique users (customers) based on bookings
+  getTotalUsers: async (req, res) => {
+    try {
+      // Count distinct ticketHolderEmail values in the Booking collection
+      const totalUsers = await Booking.distinct('ticketHolderEmail').countDocuments();
+      res.json({
+        status: 'success',
+        data: { totalUsers }
+      });
+    } catch (err) {
+      console.error('Error fetching total users:', err);
+      res.status(500).json({
+        status: 'error',
+        message: 'Failed to fetch total users count'
+      });
+    }
+
   }
 };
 
