@@ -341,15 +341,15 @@ const eventController = {
 
       // 1. Verify seat availability (critical section)
       const seatsToBookDetails = []; // Store details for booking
-      for (const seatId of selectedSeats) {
-        const seat = event.seats.find(s => s.id === seatId);
+      for (const selectedSeat of selectedSeats) {
+        const seat = event.seats.find(s => s.id === selectedSeat.seatId);
         if (!seat) {
-          return res.status(400).json({ message: `Seat ${seatId} not found in this event.` });
+          return res.status(400).json({ message: `Seat ${selectedSeat.seatId} not found in this event.` });
         }
         if (seat.isBooked) {
-          return res.status(400).json({ message: `Seat ${seatId} is already booked. Please select different seats.` });
+          return res.status(400).json({ message: `Seat ${selectedSeat.seatId} is already booked. Please select different seats.` });
         }
-        seatsToBookDetails.push({ seatId: seat.id /* any other seat details if needed */ });
+        seatsToBookDetails.push({ seatId: seat.id, ticketType: selectedSeat.ticketType });
       }
 
       // Backend price calculation could be added here for more security
@@ -367,10 +367,10 @@ const eventController = {
             enabled: true,
             allow_redirects: 'never',
           },
-          description: `Booking for ${event.eventName} - Seats: ${selectedSeats.join(', ')}`,
+          description: `Booking for ${event.eventName} - Seats: ${seatsToBookDetails.map(s => s.seatId).join(', ')}`,
           metadata: {
             eventId: eventId,
-            seats: selectedSeats.join(', '),
+            seats: seatsToBookDetails.map(s => s.seatId).join(', '),
             customer_name: ticketHolderDetails.name,
             customer_email: ticketHolderDetails.email,
           },
@@ -396,7 +396,7 @@ const eventController = {
         // 4. Create and save the Booking document
         const newBooking = new Booking({
           eventId: eventId,
-          seats: seatsToBookDetails, // Storing as an array of objects with seatId
+          seats: seatsToBookDetails, // Storing as an array of objects with seatId and ticketType
           ticketHolderName: ticketHolderDetails.name,
           ticketHolderEmail: ticketHolderDetails.email,
           ticketHolderPhone: ticketHolderDetails.phone,
@@ -410,7 +410,7 @@ const eventController = {
           message: 'Booking successful!',
           bookingId: newBooking._id,
           event: { eventName: event.eventName, eventDate: event.eventDate },
-          bookedSeats: selectedSeats,
+          bookedSeats: seatsToBookDetails.map(s => s.seatId),
           ticketHolder: ticketHolderDetails,
           totalPaid: totalPrice
         });
@@ -441,7 +441,7 @@ const eventController = {
             .replace(/{{ticketHolderName}}/g, ticketHolderDetails.name)
             .replace(/{{ticketHolderEmail}}/g, ticketHolderDetails.email)
             .replace(/{{bookingId}}/g, newBooking._id.toString())
-            .replace(/{{seats}}/g, selectedSeats.join(', '))
+            .replace(/{{seats}}/g, seatsToBookDetails.map(s => s.seatId).join(', '))
             .replace(/{{totalPrice}}/g, formattedTotalPrice)
             .replace(/{{currentYear}}/g, currentYear);
             // Note: The QR code image is embedded using cid, so no placeholder for its src in the template content itself.
@@ -560,18 +560,10 @@ const eventController = {
       const ticketSalesByCategory = {};
       const uniqueAttendees = new Set();
 
-      // Create a price map for quick lookup: { "CategoryName": price }
-      const eventTicketPriceMap = {};
-      // const ticketSalesByCategory = {}; // THIS WAS THE ERRONEOUS SECOND DECLARATION - REMOVED
-
-      // Pre-initialize ticketSalesByCategory (which was declared earlier)
-      // with all event ticket types (normalized)
-      // and populate eventTicketPriceMap (with normalized keys)
+      // Initialize ticketSalesByCategory with all event ticket types
       if (event.ticketTypes && event.ticketTypes.length > 0) {
         event.ticketTypes.forEach(tt => {
-          const normalizedEventType = tt.type.toLowerCase(); // Normalize to lowercase
-          eventTicketPriceMap[normalizedEventType] = tt.price;
-          if (!ticketSalesByCategory[tt.type]) { // Use original type name for display in report
+          if (!ticketSalesByCategory[tt.type]) {
             ticketSalesByCategory[tt.type] = {
               count: 0,
               revenue: 0,
@@ -584,133 +576,27 @@ const eventController = {
         totalTicketsSold += booking.seats.length;
         uniqueAttendees.add(booking.ticketHolderEmail);
 
-        if (booking.seats.length === 1) {
-          // Single-seat booking: Use totalAmount to determine category
-          const amountPaid = booking.totalAmount;
-          let inferredCategoryName = null;
-          let highestMatchingPrice = -1;
+        booking.seats.forEach(bookedSeat => {
+          const ticketType = bookedSeat.ticketType;
+          const ticketPrice = event.ticketTypes.find(tt => tt.type === ticketType)?.price || 0;
 
-          // Find the event ticket type that matches the amount paid.
-          // If multiple types have the same price, this picks one.
-          // Sorting by price (e.g., descending) could make this more robust if needed for ambiguous cases.
-          if (event.ticketTypes && event.ticketTypes.length > 0) {
-            for (const tt of event.ticketTypes) {
-              if (tt.price === amountPaid) {
-                // Basic exact match. More sophisticated matching might be needed if prices can be sums.
-                // For single seat, direct price match is expected.
-                inferredCategoryName = tt.type; // Use original casing
-                break; 
-              }
-            }
-          }
-
-          if (inferredCategoryName && ticketSalesByCategory[inferredCategoryName]) {
-            ticketSalesByCategory[inferredCategoryName].count += 1;
-            ticketSalesByCategory[inferredCategoryName].revenue += amountPaid;
-            totalRevenueCalculated += amountPaid;
+          if (ticketSalesByCategory[ticketType]) {
+            ticketSalesByCategory[ticketType].count += 1;
+            ticketSalesByCategory[ticketType].revenue += ticketPrice;
+            totalRevenueCalculated += ticketPrice;
           } else {
-            // Price did not match any event ticket type. Fallback to physical location based categorization.
-            console.warn(`Single seat booking: Price ${amountPaid} did not match any event ticket type for event '${event.eventName}', booking ID ${booking._id}. Using physical location for categorization.`);
-            
-            const seatId = booking.seats[0].seatId;
-            const rowLetter = seatId.charAt(0).toUpperCase();
-            const rowIndex = rowLetter.charCodeAt(0) - 'A'.charCodeAt(0);
-            let physicalSeatCategoryName = null;
-            let cumulativeRowCount = 0;
-
-            for (const venueCategory of venue.seatMap.categories) {
-              if (rowIndex < cumulativeRowCount + venueCategory.rowCount) {
-                physicalSeatCategoryName = venueCategory.name;
-                break;
-              }
-              cumulativeRowCount += venueCategory.rowCount;
+            // Handle cases where a ticket type from a booking might not be in the event's ticketTypes array
+            // This could happen if the event's ticket types were changed after the booking was made
+            const unknownCategoryKey = `Unknown Category (${ticketType})`;
+            if (!ticketSalesByCategory[unknownCategoryKey]) {
+              ticketSalesByCategory[unknownCategoryKey] = {
+                count: 0,
+                revenue: 0,
+              };
             }
-
-            if (physicalSeatCategoryName) {
-              const normalizedPhysicalSeatCategoryName = physicalSeatCategoryName.toLowerCase();
-              const priceFromMap = eventTicketPriceMap[normalizedPhysicalSeatCategoryName]; // Price from event's definition for this physical category
-              let reportCategoryName = physicalSeatCategoryName; // Default
-
-              if (event.ticketTypes && event.ticketTypes.length > 0) {
-                  const matchingEventType = event.ticketTypes.find(et => et.type.toLowerCase() === normalizedPhysicalSeatCategoryName);
-                  if (matchingEventType) {
-                      reportCategoryName = matchingEventType.type;
-                  }
-              }
-
-              if (priceFromMap !== undefined && ticketSalesByCategory[reportCategoryName]) {
-                ticketSalesByCategory[reportCategoryName].count += 1;
-                ticketSalesByCategory[reportCategoryName].revenue += priceFromMap;
-                totalRevenueCalculated += priceFromMap;
-              } else {
-                // Physical category identified, but it doesn't map to a priced event type or pre-initialized category
-                const fallbackKey = `UnpricedFallback (Seat ${seatId}, Physical ${physicalSeatCategoryName})`;
-                if (!ticketSalesByCategory[fallbackKey]) ticketSalesByCategory[fallbackKey] = { count: 0, revenue: 0 };
-                ticketSalesByCategory[fallbackKey].count += 1;
-              }
-            } else {
-              // Could not determine physical category for the seat
-              const unknownKey = `UnknownPhysical (Seat ${seatId})`;
-              if (!ticketSalesByCategory[unknownKey]) ticketSalesByCategory[unknownKey] = { count: 0, revenue: 0 };
-              ticketSalesByCategory[unknownKey].count += 1;
-            }
+            ticketSalesByCategory[unknownCategoryKey].count += 1;
           }
-        } else {
-          // Multi-seat booking: Use existing physical location logic for each seat
-          booking.seats.forEach(bookedSeat => {
-            const seatId = bookedSeat.seatId; // seatId is already available from bookedSeat.seatId
-            const rowLetter = seatId.charAt(0).toUpperCase();
-            const rowIndex = rowLetter.charCodeAt(0) - 'A'.charCodeAt(0);
-
-            let physicalSeatCategoryName = null; // Name from venue.seatMap.categories
-            let cumulativeRowCount = 0;
-
-            for (const venueCategory of venue.seatMap.categories) {
-              if (rowIndex < cumulativeRowCount + venueCategory.rowCount) {
-                physicalSeatCategoryName = venueCategory.name;
-                break;
-              }
-              cumulativeRowCount += venueCategory.rowCount;
-            }
-
-            if (physicalSeatCategoryName) {
-              const normalizedPhysicalSeatCategoryName = physicalSeatCategoryName.toLowerCase(); // Normalize for lookup
-              const price = eventTicketPriceMap[normalizedPhysicalSeatCategoryName];
-
-              let originalEventTypeNameForReport = null;
-              if (price !== undefined && event.ticketTypes && event.ticketTypes.length > 0) {
-                  const matchingEventType = event.ticketTypes.find(et => et.type.toLowerCase() === normalizedPhysicalSeatCategoryName);
-                  if (matchingEventType) {
-                      originalEventTypeNameForReport = matchingEventType.type; // This is the key used in ticketSalesByCategory
-                  }
-              }
-
-              if (price !== undefined && originalEventTypeNameForReport) {
-                if (ticketSalesByCategory[originalEventTypeNameForReport]) {
-                  ticketSalesByCategory[originalEventTypeNameForReport].count += 1;
-                  ticketSalesByCategory[originalEventTypeNameForReport].revenue += price;
-                  totalRevenueCalculated += price;
-                } else {
-                  console.error(`Logic error: Category ${originalEventTypeNameForReport} was expected in ticketSalesByCategory but not found. Seat: ${seatId}`);
-                }
-              } else if (physicalSeatCategoryName) {
-                console.warn(`Price not found or no original event type match for physical category '${physicalSeatCategoryName}' (normalized: '${normalizedPhysicalSeatCategoryName}') in event '${event.eventName}'. Seat: ${seatId}`);
-                const unpricedCategoryKey = `Unpriced (${physicalSeatCategoryName})`; 
-                if (!ticketSalesByCategory[unpricedCategoryKey]) {
-                  ticketSalesByCategory[unpricedCategoryKey] = { count: 0, revenue: 0 };
-                }
-                ticketSalesByCategory[unpricedCategoryKey].count += 1;
-              }
-            } else {
-              console.warn(`Physical category not found for seat ${seatId} (row index ${rowIndex}) in venue ${venue.name} for event '${event.eventName}'`);
-              const unknownCategoryKey = "Unknown Category (Venue Map)";
-              if (!ticketSalesByCategory[unknownCategoryKey]) {
-                ticketSalesByCategory[unknownCategoryKey] = { count: 0, revenue: 0 };
-              }
-              ticketSalesByCategory[unknownCategoryKey].count += 1;
-            }
-          });
-        }
+        });
       });
 
       const overallTotalRevenue = bookings.reduce((sum, b) => sum + b.totalAmount, 0);

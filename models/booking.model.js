@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 
 const BookedSeatSchema = new mongoose.Schema({
   seatId: { type: String, required: true }, // e.g., "A1", "B2"
+  ticketType: { type: String, required: true }
   // You could add price paid for this specific seat if needed in the future
   // price: { type: Number, required: true } 
 });
