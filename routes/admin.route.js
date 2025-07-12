@@ -1,14 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/admin.controller');
+const { protect } = require('../middleware/authMiddleware');
 
-// Admin CRUD routes
-router.get('/', adminController.getAllAdmins);
-router.post('/', adminController.createAdmin);
-router.get('/:id', adminController.getAdmin);
-router.get('/users/count', adminController.getTotalUsers);
-router.put('/:id', adminController.updateAdmin);
-router.delete('/:id', adminController.deleteAdmin);
-router.patch('/:id/change-password', adminController.changePassword);
+// Public routes
+router.post('/login', adminController.loginAdmin);
+
+// Protected routes
+router.get('/', protect, adminController.getAllAdmins);
+router.post('/', protect, adminController.createAdmin);
+router.get('/:id', protect, adminController.getAdmin);
+router.get('/users/count', protect, adminController.getTotalUsers);
+router.put('/:id', protect, adminController.updateAdmin);
+router.delete('/:id', protect, adminController.deleteAdmin);
+router.patch('/:id/change-password', protect, adminController.changePassword);
 
 module.exports = router;

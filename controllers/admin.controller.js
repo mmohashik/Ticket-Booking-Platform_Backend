@@ -1,6 +1,7 @@
 const Admin = require('../models/admin.model');
 const Booking = require('../models/booking.model');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const adminController = {
   // Get all admins (excluding passwords)
@@ -191,6 +192,57 @@ const adminController = {
       });
     }
 
+  },
+
+  // Admin login
+  loginAdmin: async (req, res) => {
+    try {
+      const { email, password } = req.body;
+
+      // Find admin by email
+      const admin = await Admin.findOne({ email }).select('+password');
+      if (!admin) {
+        return res.status(401).json({
+          status: 'error',
+          message: 'Invalid credentials'
+        });
+      }
+
+      // Compare passwords
+      const isMatch = await admin.comparePassword(password);
+      if (!isMatch) {
+        return res.status(401).json({
+          status: 'error',
+          message: 'Invalid credentials'
+        });
+      }
+
+      // Create and sign JWT
+      const token = jwt.sign(
+        { id: admin._id, role: admin.role },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h' }
+      );
+
+      // Return token (and optionally admin data)
+      res.json({
+        status: 'success',
+        token,
+        data: {
+          admin: {
+            id: admin._id,
+            userName: admin.userName,
+            email: admin.email,
+            role: admin.role
+          }
+        }
+      });
+    } catch (err) {
+      res.status(500).json({
+        status: 'error',
+        message: 'Server error during login'
+      });
+    }
   }
 };
 
