@@ -28,6 +28,9 @@ router.get('/', eventController.getAllEvents);
 // Get all bookings route - MOVED UP
 router.get('/bookings', eventController.getAllBookings);
 
+// Get total unique users count
+router.get('/bookings/users/count', eventController.getTotalUsers);
+
 router.get('/:id', eventController.getEvent);
 router.put('/:id', upload.single('image'), eventController.updateEvent);
 router.delete('/:id', eventController.deleteEvent);

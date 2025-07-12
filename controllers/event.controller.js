@@ -734,6 +734,27 @@ const eventController = {
         error: process.env.NODE_ENV === 'development' ? err.message : undefined,
       });
     }
+  },
+
+  // Get total unique users (customers) based on bookings
+  getTotalUsers: async (req, res) => {
+    try {
+      // Get distinct ticketHolderEmail values in the Booking collection
+      const distinctUsers = await Booking.distinct('ticketHolderEmail');
+      const totalUsers = distinctUsers.length;
+      console.log('Distinct users:', distinctUsers);
+      console.log('Total users:', totalUsers);
+      res.json({
+        status: 'success',
+        data: { totalUsers }
+      });
+    } catch (err) {
+      console.error('Error fetching total users:', err);
+      res.status(500).json({
+        status: 'error',
+        message: 'Failed to fetch total users count'
+      });
+    }
   }
 };
 

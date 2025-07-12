@@ -34,14 +34,11 @@ const adminController = {
         });
       }
 
-      // Hash password
-      const hashedPassword = await bcrypt.hash(password, 10);
-      
       // Create admin
       const admin = new Admin({ 
         userName,
         email, 
-        password: hashedPassword, 
+        password, 
         mobile,
         role
       });
@@ -178,8 +175,11 @@ const adminController = {
   // Get total unique users (customers) based on bookings
   getTotalUsers: async (req, res) => {
     try {
-      // Count distinct ticketHolderEmail values in the Booking collection
-      const totalUsers = await Booking.distinct('ticketHolderEmail').countDocuments();
+      // Get distinct ticketHolderEmail values in the Booking collection
+      const distinctUsers = await Booking.distinct('ticketHolderEmail');
+      const totalUsers = distinctUsers.length;
+      console.log('Distinct users:', distinctUsers);
+      console.log('Total users:', totalUsers);
       res.json({
         status: 'success',
         data: { totalUsers }
@@ -198,10 +198,12 @@ const adminController = {
   loginAdmin: async (req, res) => {
     try {
       const { email, password } = req.body;
+      console.log('Login attempt for email:', email);
 
       // Find admin by email
       const admin = await Admin.findOne({ email }).select('+password');
       if (!admin) {
+        console.log('Admin not found for email:', email);
         return res.status(401).json({
           status: 'error',
           message: 'Invalid credentials'
@@ -209,7 +211,9 @@ const adminController = {
       }
 
       // Compare passwords
+      console.log('Admin found:', admin.userName);
       const isMatch = await admin.comparePassword(password);
+      console.log('Password match result:', isMatch);
       if (!isMatch) {
         return res.status(401).json({
           status: 'error',
@@ -238,6 +242,7 @@ const adminController = {
         }
       });
     } catch (err) {
+      console.error('Login error:', err);
       res.status(500).json({
         status: 'error',
         message: 'Server error during login'
