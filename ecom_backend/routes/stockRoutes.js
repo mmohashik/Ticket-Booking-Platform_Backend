@@ -30,4 +30,13 @@ router.delete('/permanent-delete-stock/:id', authMiddleware, stockController.per
 // Check All Stocks for Low Stock and Send Alerts
 router.get('/check/low-stock', authMiddleware, stockController.checkLowStock);
 
+// Check stock availability for a specific product and quantity
+router.post('/check-stock/:id', authMiddleware, stockController.checkStockAvailability);
+
+// Validate multiple cart items stock availability
+router.post('/validate-cart', authMiddleware, stockController.validateCartStock);
+
+// Get size chart information
+router.get('/size-chart', stockController.getSizeChart);
+
 module.exports = router;

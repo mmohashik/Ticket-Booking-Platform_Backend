@@ -260,6 +260,185 @@ const checkLowStock = async (req, res) => {
     }
 };
 
+/**
+ * Check stock availability for a specific quantity
+ */
+const checkStockAvailability = async (req, res) => {
+    const { id } = req.params;
+    const { requestedQuantity, size } = req.body;
+
+    if (!requestedQuantity || requestedQuantity <= 0) {
+        return res.status(400).json({ 
+            status: "FAILED", 
+            message: "Valid requested quantity is required" 
+        });
+    }
+
+    try {
+        const query = { product: id, deletedAt: 0 };
+        if (size) {
+            query.size = size;
+        }
+
+        const stocks = await Stock.find(query).populate('product');
+        
+        if (stocks.length === 0) {
+            return res.json({
+                status: "SUCCESS",
+                data: {
+                    productId: id,
+                    size: size || 'any',
+                    availableStock: 0,
+                    requestedQuantity: parseInt(requestedQuantity),
+                    isAvailable: false,
+                    message: "No stock available"
+                }
+            });
+        }
+
+        // Calculate total available stock for the product/size combination
+        const totalAvailableStock = stocks.reduce((total, stock) => total + stock.quantity, 0);
+        const isAvailable = totalAvailableStock >= requestedQuantity;
+
+        return res.json({
+            status: "SUCCESS",
+            data: {
+                productId: id,
+                size: size || 'any',
+                availableStock: totalAvailableStock,
+                requestedQuantity: parseInt(requestedQuantity),
+                isAvailable: isAvailable,
+                message: isAvailable ? "Stock available" : `Only ${totalAvailableStock} items available`,
+                stockDetails: stocks.map(stock => ({
+                    stockId: stock._id,
+                    size: stock.size,
+                    quantity: stock.quantity,
+                    price: stock.price
+                }))
+            }
+        });
+
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ 
+            status: "FAILED", 
+            message: "Internal server error", 
+            error: err.message 
+        });
+    }
+};
+
+/**
+ * Validate cart items stock availability
+ */
+const validateCartStock = async (req, res) => {
+    const { items } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ 
+            status: "FAILED", 
+            message: "Cart items are required" 
+        });
+    }
+
+    try {
+        const validationResults = [];
+        let allValid = true;
+
+        for (const item of items) {
+            const { productId, size, quantity } = item;
+            
+            if (!productId || !quantity) {
+                validationResults.push({
+                    productId: productId || 'unknown',
+                    isValid: false,
+                    message: "Product ID and quantity are required"
+                });
+                allValid = false;
+                continue;
+            }
+
+            const query = { product: productId, deletedAt: 0 };
+            if (size) {
+                query.size = size;
+            }
+
+            const stocks = await Stock.find(query).populate('product');
+            const totalAvailableStock = stocks.reduce((total, stock) => total + stock.quantity, 0);
+            const isValid = totalAvailableStock >= quantity;
+
+            validationResults.push({
+                productId,
+                productName: stocks[0]?.product?.name || 'Unknown Product',
+                size: size || 'any',
+                requestedQuantity: quantity,
+                availableStock: totalAvailableStock,
+                isValid: isValid,
+                message: isValid ? "Stock available" : `Only ${totalAvailableStock} items available`
+            });
+
+            if (!isValid) {
+                allValid = false;
+            }
+        }
+
+        return res.json({
+            status: "SUCCESS",
+            data: {
+                allValid,
+                items: validationResults,
+                message: allValid ? "All items are available" : "Some items have insufficient stock"
+            }
+        });
+
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ 
+            status: "FAILED", 
+            message: "Internal server error" 
+        });
+    }
+};
+
+/**
+ * Get size chart information
+ */
+const getSizeChart = async (req, res) => {
+    try {
+        // Get all available sizes from stock
+        const availableSizes = await Stock.distinct('size', { deletedAt: 0 });
+        
+        // Standard size chart data
+        const sizeChart = {
+            sizes: availableSizes.sort((a, b) => {
+                const sizeOrder = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
+                return sizeOrder.indexOf(a) - sizeOrder.indexOf(b);
+            }),
+            measurements: {
+                'XS': { chest: '32-34', length: '26', shoulder: '15' },
+                'S': { chest: '34-36', length: '27', shoulder: '16' },
+                'M': { chest: '38-40', length: '28', shoulder: '17' },
+                'L': { chest: '42-44', length: '29', shoulder: '18' },
+                'XL': { chest: '46-48', length: '30', shoulder: '19' },
+                'XXL': { chest: '50-52', length: '31', shoulder: '20' }
+            },
+            unit: 'inches',
+            tips: [
+                'Measurements are in inches',
+                'For the best fit, measure while wearing your normal undergarments',
+                'Chest: Measure around the fullest part of your chest',
+                'Length: Measure from shoulder to hem',
+                'Shoulder: Measure from shoulder point to shoulder point'
+            ]
+        };
+
+        return res.json({ status: "SUCCESS", data: sizeChart });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ status: "FAILED", message: "Internal server error", error: err.message });
+    }
+};
+
 module.exports = {
     addStock,
     getAllStocks,
@@ -269,5 +448,8 @@ module.exports = {
     softDeleteStock,
     restoreStock,
     permanentlyDeleteStock,
-    checkLowStock
+    checkLowStock,
+    checkStockAvailability,
+    validateCartStock,
+    getSizeChart
 };

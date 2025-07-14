@@ -6,6 +6,9 @@ const authMiddleware = require('../middleware/auth');
 // Add Order route with authentication
 router.post('/add-order', authMiddleware, orderController.addOrder);
 
+// Validate order before processing (new)
+router.post('/validate-order', authMiddleware, orderController.validateOrderBeforeProcessing);
+
 // Get All Orders (excluding soft-deleted)
 router.get('/all-orders', authMiddleware, orderController.getAllOrders);
 

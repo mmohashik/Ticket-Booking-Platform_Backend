@@ -1,5 +1,6 @@
 const Product = require('../model/Product');
 const Category = require('../model/Category');
+const Stock = require('../model/Stock');
 const mongoose = require('mongoose');
 const path = require('path');
 
@@ -73,7 +74,59 @@ const getAllProducts = async (req, res) => {
         const products = await Product.find({ deletedAt: 0 })
             .populate('category')
             .sort({ createdAt: -1 });
-        return res.json({ status: "SUCCESS", data: products });
+
+        // Enhance products with stock information
+        const productsWithStock = await Promise.all(products.map(async (product) => {
+            const stocks = await Stock.find({ 
+                product: product._id, 
+                deletedAt: 0 
+            });
+
+            const totalQuantity = stocks.reduce((total, stock) => total + stock.quantity, 0);
+            const availableSizes = [...new Set(stocks.map(stock => stock.size))];
+            const priceRange = stocks.length > 0 ? {
+                min: Math.min(...stocks.map(stock => stock.price)),
+                max: Math.max(...stocks.map(stock => stock.price))
+            } : null;
+
+            // Stock status for frontend display
+            let stockStatus = 'out-of-stock';
+            let stockMessage = 'Out of stock';
+            
+            if (totalQuantity > 0) {
+                if (totalQuantity <= 5) {
+                    stockStatus = 'low-stock';
+                    stockMessage = `Only ${totalQuantity} left`;
+                } else if (totalQuantity <= 15) {
+                    stockStatus = 'medium-stock';
+                    stockMessage = `${totalQuantity} left`;
+                } else {
+                    stockStatus = 'in-stock';
+                    stockMessage = `${totalQuantity} available`;
+                }
+            }
+
+            return {
+                ...product.toObject(),
+                stockInfo: {
+                    totalQuantity,
+                    availableSizes,
+                    priceRange,
+                    stockStatus,
+                    stockMessage,
+                    isInStock: totalQuantity > 0
+                },
+                stocks: stocks.map(stock => ({
+                    id: stock._id,
+                    size: stock.size,
+                    quantity: stock.quantity,
+                    price: stock.price,
+                    supplier: stock.supplier
+                }))
+            };
+        }));
+
+        return res.json({ status: "SUCCESS", data: productsWithStock });
     } catch (err) {
         console.error(err);
         return res.status(500).json({ status: "FAILED", message: "Internal server error", error: err.message });
@@ -122,7 +175,57 @@ const getProductById = async (req, res) => {
             return res.status(404).json({ status: "FAILED", message: "Product not found" });
         }
 
-        return res.json({ status: "SUCCESS", data: product });
+        // Get stock information
+        const stocks = await Stock.find({ 
+            product: id, 
+            deletedAt: 0 
+        });
+
+        const totalQuantity = stocks.reduce((total, stock) => total + stock.quantity, 0);
+        const availableSizes = [...new Set(stocks.map(stock => stock.size))];
+        const priceRange = stocks.length > 0 ? {
+            min: Math.min(...stocks.map(stock => stock.price)),
+            max: Math.max(...stocks.map(stock => stock.price))
+        } : null;
+
+        // Stock status for frontend display
+        let stockStatus = 'out-of-stock';
+        let stockMessage = 'Out of stock';
+        
+        if (totalQuantity > 0) {
+            if (totalQuantity <= 5) {
+                stockStatus = 'low-stock';
+                stockMessage = `Only ${totalQuantity} left`;
+            } else if (totalQuantity <= 15) {
+                stockStatus = 'medium-stock';
+                stockMessage = `${totalQuantity} left`;
+            } else {
+                stockStatus = 'in-stock';
+                stockMessage = `${totalQuantity} available`;
+            }
+        }
+
+        const productWithStock = {
+            ...product.toObject(),
+            stockInfo: {
+                totalQuantity,
+                availableSizes,
+                priceRange,
+                stockStatus,
+                stockMessage,
+                isInStock: totalQuantity > 0
+            },
+            stocks: stocks.map(stock => ({
+                id: stock._id,
+                size: stock.size,
+                quantity: stock.quantity,
+                price: stock.price,
+                supplier: stock.supplier,
+                batchNumber: stock.batchNumber
+            }))
+        };
+
+        return res.json({ status: "SUCCESS", data: productWithStock });
 
     } catch (err) {
         console.error(err);

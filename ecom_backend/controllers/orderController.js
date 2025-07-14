@@ -398,14 +398,91 @@ const countOrders = async (req, res) => {
     }
 };
 
+/**
+ * Pre-validate order before processing
+ */
+const validateOrderBeforeProcessing = async (req, res) => {
+    try {
+        const { customerId, items } = req.body;
+
+        if (!customerId || !items || !Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ status: "FAILED", message: "Customer ID and items are required" });
+        }
+
+        const customer = await Customer.findById(customerId);
+        if (!customer) {
+            return res.status(404).json({ status: "FAILED", message: "Customer not found" });
+        }
+
+        const validationResults = [];
+        let totalAmount = 0;
+        let allValid = true;
+
+        // Validate each item
+        for (let item of items) {
+            const stock = await Stock.findById(item.stock).populate('product');
+            if (!stock) {
+                validationResults.push({
+                    stockId: item.stock,
+                    isValid: false,
+                    message: "Stock not found"
+                });
+                allValid = false;
+                continue;
+            }
+
+            const isValid = stock.quantity >= item.quantity;
+            const itemTotal = stock.price * item.quantity;
+            
+            validationResults.push({
+                stockId: item.stock,
+                productName: stock.product.name,
+                size: stock.size,
+                requestedQuantity: item.quantity,
+                availableStock: stock.quantity,
+                pricePerItem: stock.price,
+                itemTotal: itemTotal,
+                isValid: isValid,
+                message: isValid ? "Available" : `Only ${stock.quantity} items available`
+            });
+
+            if (isValid) {
+                totalAmount += itemTotal;
+            } else {
+                allValid = false;
+            }
+        }
+
+        return res.json({
+            status: "SUCCESS",
+            data: {
+                customer: {
+                    id: customer._id,
+                    name: customer.name,
+                    email: customer.email
+                },
+                items: validationResults,
+                totalAmount: totalAmount,
+                isValid: allValid,
+                message: allValid ? "Order can be processed" : "Some items have issues"
+            }
+        });
+
+    } catch (error) {
+        console.error("Order validation failed:", error);
+        return res.status(500).json({ status: "FAILED", message: "Order validation failed", error: error.message });
+    }
+};
+
 module.exports = {
     addOrder,
     getAllOrders,
     getAllOrdersWithDeleted,
+    countOrders,
     getOrderById,
     updateOrderStatus,
     softDeleteOrder,
     restoreOrder,
     permanentlyDeleteOrder,
-    countOrders
+    validateOrderBeforeProcessing
 };
