@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Ticket</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; line-height: 1.6; background-color: #f4f4f4; color: #333; }
+        .container { max-width: 600px; margin: 20px auto; padding: 20px; background-color: #ffffff; border: 1px solid #dddddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .header { text-align: center; border-bottom: 2px dashed #eeeeee; padding-bottom: 20px; margin-bottom: 20px; }
+        .header h1 { color: #4A00E0; margin: 0 0 10px 0; font-size: 28px; } /* Purple-ish */
+        .header p { color: #555555; font-size: 16px; margin: 0; }
+        .ticket-details, .booking-info, .qr-code-section { margin-bottom: 25px; padding: 20px; border-radius: 6px; background-color: #f9f9f9; border: 1px solid #eeeeee; }
+        .ticket-details h2 { font-size: 22px; color: #8E2DE2; margin-top: 0; margin-bottom: 15px; } /* Lighter Purple */
+        .booking-info h3, .qr-code-section h3 { font-size: 18px; color: #333333; margin-top: 0; margin-bottom: 10px; }
+        .qr-code-section { text-align: center; }
+        .qr-code-img { border: 2px solid #ffffff; box-shadow: 0 0 5px rgba(0,0,0,0.1); width: 150px; height: 150px; margin-top:10px;}
+        .footer { text-align: center; padding-top: 20px; border-top: 1px solid #eeeeee; font-size: 12px; color: #777777; }
+        .footer p { margin: 5px 0; }
+        strong { color: #333; }
+        .booking-id { font-family: 'Courier New', Courier, monospace; background-color: #e7e7e7; padding: 3px 6px; border-radius: 4px; font-size: 15px; }
+        .total-price { font-size: 20px; font-weight: bold; color: #28a745; } /* Green */
+        .seats { font-weight: bold; color: #4A00E0; }
+        
+        /* Basic responsive table-like structure for details */
+        .detail-item { margin-bottom: 8px; }
+        .detail-item strong { display: inline-block; width: 100px; } /* Adjust width as needed */
+
+        @media (max-width: 600px) {
+            .container { margin: 10px; padding: 15px; }
+            .header h1 { font-size: 24px; }
+            .ticket-details h2 { font-size: 20px; }
+            .detail-item strong { width: 90px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container" style="max-width: 600px; margin: 20px auto; padding: 20px; background-color: #ffffff; border: 1px solid #dddddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+        
+        <div class="header" style="text-align: center; border-bottom: 2px dashed #eeeeee; padding-bottom: 20px; margin-bottom: 20px;">
+            <h1 style="color: #4A00E0; margin: 0 0 10px 0; font-size: 28px;">Your Event Ticket</h1>
+            <p style="color: #555555; font-size: 16px; margin: 0;">Thank you for your booking!</p>
+        </div>
+
+        <div class="ticket-details" style="margin-bottom: 25px; padding: 20px; border-radius: 6px; background-color: #f9f9f9; border: 1px solid #eeeeee;">
+            <h2 style="font-size: 22px; color: #8E2DE2; margin-top: 0; margin-bottom: 15px;">{{eventName}}</h2>
+            <div class="detail-item" style="margin-bottom: 8px;"><strong style="display: inline-block; width: 100px;">Date:</strong> {{eventDate}}</div>
+            <div class="detail-item" style="margin-bottom: 8px;"><strong style="display: inline-block; width: 100px;">Time:</strong> {{eventTime}}</div>
+            <div class="detail-item" style="margin-bottom: 8px;"><strong style="display: inline-block; width: 100px;">Venue:</strong> {{venueName}}</div>
+        </div>
+
+        <div class="booking-info" style="margin-bottom: 25px; padding: 20px; border-radius: 6px; background-color: #f9f9f9; border: 1px solid #eeeeee;">
+            <h3 style="font-size: 18px; color: #333333; margin-top: 0; margin-bottom: 10px;">Booking Confirmation</h3>
+            <div class="detail-item" style="margin-bottom: 8px;"><strong style="display: inline-block; width: 100px;">Booked By:</strong> {{ticketHolderName}}</div>
+            <div class="detail-item" style="margin-bottom: 8px;"><strong style="display: inline-block; width: 100px;">Email:</strong> {{ticketHolderEmail}}</div>
+            <div class="detail-item" style="margin-bottom: 8px;"><strong style="display: inline-block; width: 100px;">Booking ID:</strong> <span class="booking-id" style="font-family: 'Courier New', Courier, monospace; background-color: #e7e7e7; padding: 3px 6px; border-radius: 4px; font-size: 15px;">{{bookingId}}</span></div>
+            <div class="detail-item" style="margin-bottom: 8px;"><strong style="display: inline-block; width: 100px;">Seats:</strong> <span class="seats" style="font-weight: bold; color: #4A00E0;">{{seats}}</span></div>
+            <div class="detail-item" style="margin-bottom: 8px;"><strong style="display: inline-block; width: 100px;">Total Price:</strong> <span class="total-price" style="font-size: 20px; font-weight: bold; color: #28a745;">${{totalPrice}}</span></div>
+        </div>
+
+        <div class="qr-code-section" style="text-align: center; margin-bottom: 25px; padding: 20px; border-radius: 6px; background-color: #f9f9f9; border: 1px solid #eeeeee;">
+            <h3 style="font-size: 18px; color: #333333; margin-top: 0; margin-bottom: 10px;">Your QR Code</h3>
+            <p style="color: #555555; font-size: 14px; margin-bottom:15px;">Scan this QR code for entry or verification.</p>
+            <img src="cid:qr_code_image" alt="QR Code" class="qr-code-img" style="border: 2px solid #ffffff; box-shadow: 0 0 5px rgba(0,0,0,0.1); width: 150px; height: 150px; margin-top:10px; display:inline-block;">
+        </div>
+
+        <div class="footer" style="text-align: center; padding-top: 20px; border-top: 1px solid #eeeeee; font-size: 12px; color: #777777;">
+            <p style="margin: 5px 0;">If you have any questions, please contact support.</p>
+            <p style="margin: 5px 0;">&copy; {{currentYear}} Ticket Booking Platform</p>
+        </div>
+    </div>
+</body>
+</html>
