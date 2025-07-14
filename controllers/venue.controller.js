@@ -27,7 +27,7 @@ const venueController = {
   // Create new venue
   createVenue: async (req, res) => {
     try {
-      const { name, description, layoutType, rows, cols, aisleAfterCol, categories } = req.body;
+      const { name, description, layoutType, rows, cols, aisleAfterCol, aisleAfterCol2, categories } = req.body;
       
       if (!name || !rows || !cols) {
         return res.status(400).json({ 
@@ -61,6 +61,7 @@ const venueController = {
           rows: parsedRows,
           cols: parsedCols,
           aisleAfterCol: aisleAfterCol ? parseInt(aisleAfterCol, 10) : undefined,
+          aisleAfterCol2: aisleAfterCol2 ? parseInt(aisleAfterCol2, 10) : undefined,
           categories: categories || [],
           unavailableSeats
         }
@@ -70,6 +71,7 @@ const venueController = {
         rows: venueData.seatMap.rows,
         cols: venueData.seatMap.cols,
         aisleAfterCol: venueData.seatMap.aisleAfterCol,
+        aisleAfterCol2: venueData.seatMap.aisleAfterCol2,
         categories: venueData.seatMap.categories,
         unavailableSeats: venueData.seatMap.unavailableSeats,
       });
@@ -158,6 +160,7 @@ const venueController = {
         rows: venue.seatMap.rows,
         cols: venue.seatMap.cols,
         aisleAfterCol: venue.seatMap.aisleAfterCol,
+        aisleAfterCol2: venue.seatMap.aisleAfterCol2,
         categories: categoriesWithPricing, 
         unavailableSeats: venue.seatMap.unavailableSeats || [], 
         eventBookedSeats: bookedSeatIds 
@@ -173,6 +176,7 @@ const venueController = {
           rows: venue.seatMap.rows,
           cols: venue.seatMap.cols,
           aisleAfterCol: venue.seatMap.aisleAfterCol,
+          aisleAfterCol2: venue.seatMap.aisleAfterCol2,
           categories: categoriesWithPricing, 
           unavailableSeats: venue.seatMap.unavailableSeats || []
         },
@@ -206,7 +210,7 @@ const venueController = {
   // Update venue
   updateVenue: async (req, res) => {
     try {
-      const { name, description, layoutType, rows, cols, aisleAfterCol, categories, unavailableSeats } = req.body;
+      const { name, description, layoutType, rows, cols, aisleAfterCol, aisleAfterCol2, categories, unavailableSeats } = req.body;
       
       const venue = await Venue.findById(req.params.id);
       if (!venue) {
@@ -224,10 +228,12 @@ const venueController = {
       const parsedRows = rows ? parseInt(rows, 10) : venue.seatMap.rows;
       const parsedCols = cols ? parseInt(cols, 10) : venue.seatMap.cols;
       const parsedAisleAfterCol = aisleAfterCol ? parseInt(aisleAfterCol, 10) : venue.seatMap.aisleAfterCol;
+      const parsedAisleAfterCol2 = aisleAfterCol2 ? parseInt(aisleAfterCol2, 10) : venue.seatMap.aisleAfterCol2;
 
       if (rows && venue.seatMap.rows !== parsedRows) { venue.seatMap.rows = parsedRows; layoutChanged = true; }
       if (cols && venue.seatMap.cols !== parsedCols) { venue.seatMap.cols = parsedCols; layoutChanged = true; }
       if (aisleAfterCol && venue.seatMap.aisleAfterCol !== parsedAisleAfterCol) { venue.seatMap.aisleAfterCol = parsedAisleAfterCol; layoutChanged = true; }
+      if (aisleAfterCol2 && venue.seatMap.aisleAfterCol2 !== parsedAisleAfterCol2) { venue.seatMap.aisleAfterCol2 = parsedAisleAfterCol2; layoutChanged = true; }
       
       if (categories) { 
         venue.seatMap.categories = categories.map(cat => ({
@@ -254,6 +260,7 @@ const venueController = {
           rows: venue.seatMap.rows,
           cols: venue.seatMap.cols,
           aisleAfterCol: venue.seatMap.aisleAfterCol,
+          aisleAfterCol2: venue.seatMap.aisleAfterCol2,
           categories: venue.seatMap.categories,
           unavailableSeats: venue.seatMap.unavailableSeats || []
         });
@@ -325,7 +332,7 @@ const venueController = {
   // For admin panel preview when defining a venue
   generateSVGPreview: async (req, res) => {
     try {
-      const { rows, cols, aisleAfterCol, categories, unavailableSeats = [] } = req.body;
+      const { rows, cols, aisleAfterCol, aisleAfterCol2, categories, unavailableSeats = [] } = req.body;
   
       if (!rows || !cols || !categories) {
         return res.status(400).json({ error: 'Missing required parameters for SVG preview' });
@@ -335,6 +342,7 @@ const venueController = {
         rows: parseInt(rows, 10),
         cols: parseInt(cols, 10),
         aisleAfterCol: aisleAfterCol ? parseInt(aisleAfterCol, 10) : undefined,
+        aisleAfterCol2: aisleAfterCol2 ? parseInt(aisleAfterCol2, 10) : undefined,
         categories: categories.map(cat => ({...cat, rowCount: parseInt(cat.rowCount, 10) || 0})),
         unavailableSeats,
       });
@@ -349,7 +357,7 @@ const venueController = {
 };
 
 // Helper function to generate SVG
-function generateSVG({ rows, cols, aisleAfterCol, categories, unavailableSeats = [], eventBookedSeats = [] }) {
+function generateSVG({ rows, cols, aisleAfterCol, aisleAfterCol2, categories, unavailableSeats = [], eventBookedSeats = [] }) {
   const seatWidth = 30;
   const seatHeight = 30;
   const spacing = 5; 
@@ -361,7 +369,10 @@ function generateSVG({ rows, cols, aisleAfterCol, categories, unavailableSeats =
 
   let effectiveAisleWidth = 0;
   if (aisleAfterCol && cols > aisleAfterCol) {
-      effectiveAisleWidth = aisleTrueWidth - spacing; 
+      effectiveAisleWidth += aisleTrueWidth - spacing; 
+  }
+  if (aisleAfterCol2 && cols > aisleAfterCol2) {
+      effectiveAisleWidth += aisleTrueWidth - spacing;
   }
   const baseSeatLayoutWidth = (cols * (seatWidth + spacing)) - spacing + effectiveAisleWidth;
   const svgWidth = baseSeatLayoutWidth + rowLabelWidth;
@@ -411,8 +422,11 @@ function generateSVG({ rows, cols, aisleAfterCol, categories, unavailableSeats =
       
       // Adjust seat x-coordinate for row labels
       let x = rowLabelWidth + c * (seatWidth + spacing);
-      if (aisleAfterCol && c >= aisleAfterCol) { 
-        x += effectiveAisleWidth;
+      if (aisleAfterCol && c >= aisleAfterCol) {
+        x += aisleTrueWidth - spacing;
+      }
+      if (aisleAfterCol2 && c >= aisleAfterCol2) {
+        x += aisleTrueWidth - spacing;
       }
       const y = topOffset + r * (seatHeight + spacing);
       

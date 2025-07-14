@@ -13,6 +13,7 @@ const venueSchema = new mongoose.Schema({
     rows: { type: Number, required: true },
     cols: { type: Number, required: true },
     aisleAfterCol: { type: Number }, // Column number after which aisle appears
+    aisleAfterCol2: { type: Number }, // Column number after which second aisle appears
     categories: [{
       name: { type: String, required: true, enum: ['General', 'VIP', 'VVIP'] },
       color: { type: String, required: true },
